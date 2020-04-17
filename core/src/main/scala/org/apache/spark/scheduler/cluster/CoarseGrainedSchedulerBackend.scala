@@ -210,7 +210,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
     override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
 
       case RegisterExecutor(executorId, executorRef, hostname, cores, logUrls,
-          attributes, resources, resourceProfileId) =>
+          attributes, resources, erpId) =>
         if (executorDataMap.contains(executorId)) {
           context.sendFailure(new IllegalStateException(s"Duplicate executor ID: $executorId"))
         } else if (scheduler.nodeBlacklist.contains(hostname) ||
@@ -229,7 +229,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
               context.senderAddress
             }
           logInfo(s"Registered executor $executorRef ($executorAddress) with ID $executorId, " +
-            s" ResourceProfileId $resourceProfileId")
+            s" ExecutorResourceProfileId $erpId")
           addressToExecutorId(executorAddress) = executorId
           totalCoreCount.addAndGet(cores)
           totalRegisteredExecutors.addAndGet(1)
@@ -237,12 +237,12 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
             // tell the executor it can schedule resources up to numSlotsPerAddress times,
             // as configured by the user, or set to 1 as that is the default (1 task/resource)
             val numParts = scheduler.sc.resourceProfileManager
-              .resourceProfileFromId(resourceProfileId).getNumSlotsPerAddress(rName, conf)
+              .resourceProfileFromId(erpId).getNumSlotsPerAddress(rName, conf)
             (info.name, new ExecutorResourceInfo(info.name, info.addresses, numParts))
           }
           val data = new ExecutorData(executorRef, executorAddress, hostname,
             0, cores, logUrlHandler.applyPattern(logUrls, attributes), attributes,
-            resourcesInfo, resourceProfileId)
+            resourcesInfo, erpId)
           // This must be synchronized because variables mutated
           // in this block are read when requesting executors
           CoarseGrainedSchedulerBackend.this.synchronized {
@@ -658,7 +658,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
   /**
    * Update the cluster manager on our scheduling needs. Three bits of information are included
    * to help it make decisions.
-   * @param resourceProfileToNumExecutors The total number of executors we'd like to have per
+   * @param resourceProfileIdToNumExecutors The total number of executors we'd like to have per
    *                                      ResourceProfile. The cluster manager shouldn't kill any
    *                                      running executor to reach this number, but, if all
    *                                      existing executors were to die, this is the number

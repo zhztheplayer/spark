@@ -15,22 +15,8 @@
  * limitations under the License.
  */
 
-package org.apache.spark.scheduler
+package org.apache.spark.resource
 
-import scala.collection.mutable.Buffer
-
-import org.apache.spark.resource.{ExecutorResourceProfile, ResourceProfile}
-
-/**
- * Represents free resources available on an executor.
- */
-private[spark]
-case class WorkerOffer(
-    executorId: String,
-    host: String,
-    cores: Int,
-    // `address` is an optional hostPort string, it provide more useful information than `host`
-    // when multiple executors are launched on the same host.
-    address: Option[String] = None,
-    resources: Map[String, Buffer[String]] = Map.empty,
-    resourceProfileId: Int = ExecutorResourceProfile.DEFAULT_PROFILE_ID)
+object ExecutorResourceProfileCreationStrategy extends Enumeration {
+  val ALWAYS_NEW, FIND_EXISTING = Value
+}

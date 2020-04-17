@@ -15,22 +15,28 @@
  * limitations under the License.
  */
 
-package org.apache.spark.scheduler
+package org.apache.spark.resource
 
-import scala.collection.mutable.Buffer
-
-import org.apache.spark.resource.{ExecutorResourceProfile, ResourceProfile}
+import org.apache.spark.annotation.Evolving
+import org.apache.spark.internal.Logging
 
 /**
- * Represents free resources available on an executor.
+ * Resource profile only associated with executor.
  */
-private[spark]
-case class WorkerOffer(
-    executorId: String,
-    host: String,
-    cores: Int,
-    // `address` is an optional hostPort string, it provide more useful information than `host`
-    // when multiple executors are launched on the same host.
-    address: Option[String] = None,
-    resources: Map[String, Buffer[String]] = Map.empty,
-    resourceProfileId: Int = ExecutorResourceProfile.DEFAULT_PROFILE_ID)
+@Evolving
+private[spark] class ExecutorResourceProfile private(
+    val id: Int,
+    val executorResources: Map[String, ExecutorResourceRequest]
+) extends Serializable with Logging {
+
+
+}
+
+object ExecutorResourceProfile extends Logging {
+  val CORES: String = ResourceProfile.CORES
+  val MEMORY: String = ResourceProfile.MEMORY
+  val OVERHEAD_MEM: String = ResourceProfile.OVERHEAD_MEM
+  val PYSPARK_MEM: String = ResourceProfile.PYSPARK_MEM
+
+  val DEFAULT_PROFILE_ID = ExecutorResourceProfileManager.DEFAULT_PROFILE_ID
+}

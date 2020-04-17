@@ -29,7 +29,7 @@ import org.apache.spark.executor.ExecutorMetrics
 import org.apache.spark.internal.config
 import org.apache.spark.internal.config.Tests.TEST_SCHEDULE_INTERVAL
 import org.apache.spark.metrics.MetricsSystem
-import org.apache.spark.resource.{ExecutorResourceRequests, ResourceProfile, ResourceProfileBuilder, ResourceProfileManager, TaskResourceRequests}
+import org.apache.spark.resource.{ExecutorResourceProfileManager, ExecutorResourceRequests, ResourceProfile, ResourceProfileBuilder, ResourceProfileManager, TaskResourceRequests}
 import org.apache.spark.resource.ResourceProfile.DEFAULT_RESOURCE_PROFILE_ID
 import org.apache.spark.scheduler._
 import org.apache.spark.scheduler.cluster.ExecutorInfo
@@ -48,6 +48,7 @@ class ExecutorAllocationManagerSuite extends SparkFunSuite {
   private var client: ExecutorAllocationClient = _
   private val clock = new SystemClock()
   private var rpManager: ResourceProfileManager = _
+  private var erpManager: ExecutorResourceProfileManager = _
 
 
   override def beforeEach(): Unit = {
@@ -1443,8 +1444,9 @@ class ExecutorAllocationManagerSuite extends SparkFunSuite {
       clock: Clock = new SystemClock()): ExecutorAllocationManager = {
     ResourceProfile.reInitDefaultProfile(conf)
     rpManager = new ResourceProfileManager(conf)
+    erpManager = new ExecutorResourceProfileManager(rpManager)
     val manager = new ExecutorAllocationManager(client, listenerBus, conf, clock = clock,
-      resourceProfileManager = rpManager)
+      resourceProfileManager = rpManager, executorResourceProfileManager = erpManager)
     managers += manager
     manager.start()
     manager

@@ -223,6 +223,7 @@ class SparkContext(config: SparkConf) extends Logging {
   private var _shuffleDriverComponents: ShuffleDriverComponents = _
   private var _plugins: Option[PluginContainer] = None
   private var _resourceProfileManager: ResourceProfileManager = _
+  private var _executorResourceProfileManager: ExecutorResourceProfileManager = _
 
   /* ------------------------------------------------------------------------------------- *
    | Accessors and public fields. These provide access to the internal state of the        |
@@ -337,6 +338,9 @@ class SparkContext(config: SparkConf) extends Logging {
 
   private[spark] def resourceProfileManager: ResourceProfileManager = _resourceProfileManager
 
+  private[spark] def executorResourceProfileManager: ExecutorResourceProfileManager =
+    _executorResourceProfileManager
+
   private[spark] def cleaner: Option[ContextCleaner] = _cleaner
 
   private[spark] var checkpointDir: Option[String] = None
@@ -436,6 +440,7 @@ class SparkContext(config: SparkConf) extends Logging {
 
     _listenerBus = new LiveListenerBus(_conf)
     _resourceProfileManager = new ResourceProfileManager(_conf)
+    _executorResourceProfileManager = new ExecutorResourceProfileManager(_resourceProfileManager)
 
     // Initialize the app status store and listener before SparkEnv is created so that it gets
     // all events.
@@ -596,7 +601,8 @@ class SparkContext(config: SparkConf) extends Logging {
           case b: ExecutorAllocationClient =>
             Some(new ExecutorAllocationManager(
               schedulerBackend.asInstanceOf[ExecutorAllocationClient], listenerBus, _conf,
-              cleaner = cleaner, resourceProfileManager = resourceProfileManager))
+              cleaner = cleaner, resourceProfileManager = resourceProfileManager,
+              executorResourceProfileManager = executorResourceProfileManager))
           case _ =>
             None
         }

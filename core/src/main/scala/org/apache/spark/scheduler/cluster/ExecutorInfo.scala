@@ -31,7 +31,7 @@ class ExecutorInfo(
     val logUrlMap: Map[String, String],
     val attributes: Map[String, String],
     val resourcesInfo: Map[String, ResourceInformation],
-    val resourceProfileId: Int) {
+    val executorResourceProfileId: Int) {
 
   def this(executorHost: String, totalCores: Int, logUrlMap: Map[String, String]) = {
     this(executorHost, totalCores, logUrlMap, Map.empty, Map.empty, DEFAULT_RESOURCE_PROFILE_ID)
