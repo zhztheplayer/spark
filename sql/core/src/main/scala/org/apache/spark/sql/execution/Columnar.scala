@@ -499,7 +499,7 @@ case class ApplyColumnarRulesAndInsertTransitions(
    * Inserts an transition to columnar formatted data.
    */
   private def insertRowToColumnar(plan: SparkPlan): SparkPlan = {
-    if (!plan.supportsColumnar) {
+    if (plan.supportsRowBased && !plan.supportsColumnar) {
       // The tree feels kind of backwards
       // Columnar Processing will start here, so transition from row to columnar
       RowToColumnarExec(insertTransitions(plan, outputsColumnar = false))

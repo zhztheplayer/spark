@@ -61,6 +61,23 @@ class ColumnarRulesSuite extends PlanTest with SharedSparkSession {
     val appliedOnce = rules.apply(plan)
     assert(appliedOnce == plan)
   }
+
+  test("Don't add transition on plan that has neither columnar nor row-based support") {
+    // Construct a plan has neither columnar nor row-based support.
+    val plan = CannotDoColumnarAndRowOp(LeafOp(true))
+
+    // The rule that converts a plan to columnar.
+    val toColumnarRule = ApplyColumnarRulesAndInsertTransitions(
+      spark.sessionState.columnarRules, outputsColumnar = true)
+    // No transition should be added.
+    assert(toColumnarRule.apply(plan).isInstanceOf[CannotDoColumnarAndRowOp])
+
+    // The rule that converts a plan to row-based.
+    val toRowBasedPlan = ApplyColumnarRulesAndInsertTransitions(
+      spark.sessionState.columnarRules, outputsColumnar = false)
+    // No transition should be added.
+    assert(toRowBasedPlan.apply(plan).isInstanceOf[CannotDoColumnarAndRowOp])
+  }
 }
 
 case class LeafOp(override val supportsColumnar: Boolean) extends LeafExecNode {
@@ -83,5 +100,17 @@ case class CanDoColumnarAndRowOp(child: SparkPlan) extends UnaryExecNode {
     throw SparkUnsupportedOperationException()
   override def output: Seq[Attribute] = child.output
   override protected def withNewChildInternal(newChild: SparkPlan): CanDoColumnarAndRowOp =
+    copy(child = newChild)
+}
+
+case class CannotDoColumnarAndRowOp(child: SparkPlan) extends UnaryExecNode {
+  override val supportsRowBased: Boolean = false
+  override val supportsColumnar: Boolean = false
+
+  override protected def doExecute(): RDD[InternalRow] = throw SparkUnsupportedOperationException()
+  override protected def doExecuteColumnar(): RDD[ColumnarBatch] =
+    throw SparkUnsupportedOperationException()
+  override def output: Seq[Attribute] = child.output
+  override protected def withNewChildInternal(newChild: SparkPlan): CannotDoColumnarAndRowOp =
     copy(child = newChild)
 }
