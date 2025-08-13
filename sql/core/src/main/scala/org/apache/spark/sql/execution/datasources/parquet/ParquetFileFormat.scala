@@ -30,8 +30,8 @@ import org.apache.parquet.filter2.compat.FilterCompat
 import org.apache.parquet.filter2.predicate.FilterApi
 import org.apache.parquet.format.converter.ParquetMetadataConverter.SKIP_ROW_GROUPS
 import org.apache.parquet.hadoop._
-
 import org.apache.spark.TaskContext
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.InternalRow
@@ -46,6 +46,7 @@ import org.apache.spark.sql.execution.vectorized.{ConstantColumnVector, OffHeapC
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ArrowColumnVector
 import org.apache.spark.util.{SerializableConfiguration, ThreadUtils}
 
 class ParquetFileFormat
@@ -91,13 +92,21 @@ class ParquetFileFormat
       requiredSchema: StructType,
       partitionSchema: StructType,
       sqlConf: SQLConf): Option[Seq[String]] = {
+    val enableVeloxVectorizedReader: Boolean =
+      ParquetUtils.isVeloxBatchReadSupportedForSchema(sqlConf, requiredSchema)
     Option(Seq.fill(requiredSchema.fields.length)(
       if (!sqlConf.offHeapColumnVectorEnabled) {
         classOf[OnHeapColumnVector].getName
       } else {
-        classOf[OffHeapColumnVector].getName
+        if (enableVeloxVectorizedReader) {
+          classOf[ArrowColumnVector].getName
+        } else {
+          classOf[OffHeapColumnVector].getName
+        }
       }
-    ) ++ Seq.fill(partitionSchema.fields.length)(classOf[ConstantColumnVector].getName))
+    ) ++ Seq.fill(partitionSchema.fields.length) {
+      classOf[ConstantColumnVector].getName
+    })
   }
 
   override def isSplitable(
@@ -171,7 +180,7 @@ class ParquetFileFormat
     val enableVectorizedReader: Boolean =
       ParquetUtils.isBatchReadSupportedForSchema(sqlConf, resultSchema)
     val enableVeloxVectorizedReader: Boolean =
-      ParquetUtils.isVeloxBatchReadSupportedForSchema(sqlConf, resultSchema)
+      ParquetUtils.isVeloxBatchReadSupportedForSchema(sqlConf, requiredSchema)
     val enableRecordFilter: Boolean = sqlConf.parquetRecordFilterEnabled
     val timestampConversion: Boolean = sqlConf.isParquetINT96TimestampConversion
     val capacity = sqlConf.parquetVectorizedReaderBatchSize
@@ -281,10 +290,11 @@ class ParquetFileFormat
              int96RebaseSpec.mode.toString,
              int96RebaseSpec.timeZone,
              enableOffHeapColumnVector && taskContext.isDefined,
+             isCaseSensitive,
              capacity)
            val iter = new RecordReaderIterator(veloxVectorizedReader)
            try {
-             veloxVectorizedReader.initialize(split, hadoopAttemptContext, Option.apply(fileFooter))
+             veloxVectorizedReader.initialize(split, hadoopAttemptContext, Option.apply(fileFooter), filters.asJava)
              logDebug(s"Appending $partitionSchema ${file.partitionValues}")
              veloxVectorizedReader.initBatch(partitionSchema, file.partitionValues)
              if (returningBatch) {

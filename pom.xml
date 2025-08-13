@@ -226,7 +226,7 @@
     If you are changing Arrow version specification, please check
     ./python/pyspark/sql/pandas/utils.py, and ./python/setup.py too.
     -->
-    <arrow.version>12.0.1</arrow.version>
+    <arrow.version>15.0.2</arrow.version>
     <ammonite.version>2.5.9</ammonite.version>
 
     <!-- org.fusesource.leveldbjni will be used except on arm64 platform. -->
@@ -856,6 +856,40 @@
         <groupId>io.github.zhztheplayer</groupId>
         <artifactId>velox4j</artifactId>
         <version>0.1.0-SNAPSHOT</version>
+        <exclusions>
+          <exclusion>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jdk8</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>org.apache.arrow</groupId>
+            <artifactId>arrow-vector</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>org.apache.arrow</groupId>
+            <artifactId>arrow-memory-unsafe</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+          </exclusion>
+        </exclusions>
       </dependency>
 
       <!-- Netty Begin -->
@@ -2766,6 +2800,11 @@
             <artifactId>google-http-client</artifactId>
           </exclusion>
         </exclusions>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.arrow</groupId>
+        <artifactId>arrow-c-data</artifactId>
+        <version>${arrow.version}</version>
       </dependency>
       <dependency>
         <groupId>org.apache.arrow</groupId>
