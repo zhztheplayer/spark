@@ -686,6 +686,41 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
     }
   }
 
+  test("SPARK-10301 requested schema clipping - deeply nested struct - 2") {
+    withTempPath { dir =>
+      val path = dir.getCanonicalPath
+
+      val df = spark
+        .range(1)
+        .selectExpr(
+          "NAMED_STRUCT('a', MAP(NAMED_STRUCT('d', id, 'e', id)," +
+            " NAMED_STRUCT('b', id, 'c', id))) AS s")
+        .coalesce(1)
+
+      df.write.parquet(path)
+
+      val userDefinedSchema = new StructType()
+        .add("s",
+          new StructType()
+            .add(
+              "a",
+              new MapType(
+                new StructType()
+                  .add("d", LongType, nullable = true)
+                  .add("e", LongType, nullable = true),
+                new StructType()
+                  .add("b", LongType, nullable = true)
+                  .add("d", StringType, nullable = true),
+                valueContainsNull = true),
+              nullable = true),
+          nullable = true)
+
+      checkAnswer(
+        spark.read.schema(userDefinedSchema).parquet(path),
+        Row(Row(Map(Row(0, 0) -> Row(0, null)))))
+    }
+  }
+
   test("SPARK-10301 requested schema clipping - out of order") {
     withTempPath { dir =>
       val path = dir.getCanonicalPath
