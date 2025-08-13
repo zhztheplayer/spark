@@ -170,6 +170,8 @@ class ParquetFileFormat
     val enableOffHeapColumnVector = sqlConf.offHeapColumnVectorEnabled
     val enableVectorizedReader: Boolean =
       ParquetUtils.isBatchReadSupportedForSchema(sqlConf, resultSchema)
+    val enableVeloxVectorizedReader: Boolean =
+      ParquetUtils.isVeloxBatchReadSupportedForSchema(sqlConf, resultSchema)
     val enableRecordFilter: Boolean = sqlConf.parquetRecordFilterEnabled
     val timestampConversion: Boolean = sqlConf.isParquetINT96TimestampConversion
     val capacity = sqlConf.parquetVectorizedReaderBatchSize
@@ -270,40 +272,68 @@ class ParquetFileFormat
         ParquetInputFormat.setFilterPredicate(hadoopAttemptContext.getConfiguration, pushed.get)
       }
       val taskContext = Option(TaskContext.get())
-      if (enableVectorizedReader) {
-        val vectorizedReader = new VectorizedParquetRecordReader(
-          convertTz.orNull,
-          datetimeRebaseSpec.mode.toString,
-          datetimeRebaseSpec.timeZone,
-          int96RebaseSpec.mode.toString,
-          int96RebaseSpec.timeZone,
-          enableOffHeapColumnVector && taskContext.isDefined,
-          capacity)
-        // SPARK-37089: We cannot register a task completion listener to close this iterator here
-        // because downstream exec nodes have already registered their listeners. Since listeners
-        // are executed in reverse order of registration, a listener registered here would close the
-        // iterator while downstream exec nodes are still running. When off-heap column vectors are
-        // enabled, this can cause a use-after-free bug leading to a segfault.
-        //
-        // Instead, we use FileScanRDD's task completion listener to close this iterator.
-        val iter = new RecordReaderIterator(vectorizedReader)
-        try {
-          vectorizedReader.initialize(split, hadoopAttemptContext, Option.apply(fileFooter))
-          logDebug(s"Appending $partitionSchema ${file.partitionValues}")
-          vectorizedReader.initBatch(partitionSchema, file.partitionValues)
-          if (returningBatch) {
-            vectorizedReader.enableReturningBatches()
-          }
+       if (enableVectorizedReader) {
+         if (enableVeloxVectorizedReader) {
+           val veloxVectorizedReader = new VeloxVectorizedParquetRecordReader(
+             convertTz.orNull,
+             datetimeRebaseSpec.mode.toString,
+             datetimeRebaseSpec.timeZone,
+             int96RebaseSpec.mode.toString,
+             int96RebaseSpec.timeZone,
+             enableOffHeapColumnVector && taskContext.isDefined,
+             capacity)
+           val iter = new RecordReaderIterator(veloxVectorizedReader)
+           try {
+             veloxVectorizedReader.initialize(split, hadoopAttemptContext, Option.apply(fileFooter))
+             logDebug(s"Appending $partitionSchema ${file.partitionValues}")
+             veloxVectorizedReader.initBatch(partitionSchema, file.partitionValues)
+             if (returningBatch) {
+               veloxVectorizedReader.enableReturningBatches()
+             }
+             // UnsafeRowParquetRecordReader appends the columns internally to avoid another copy.
+             iter.asInstanceOf[Iterator[InternalRow]]
+           } catch {
+             case e: Throwable =>
+               // SPARK-23457: In case there is an exception in initialization, close the iterator to
+               // avoid leaking resources.
+               iter.close()
+               throw e
+           }
+         } else {
+           val vectorizedReader = new VectorizedParquetRecordReader(
+             convertTz.orNull,
+             datetimeRebaseSpec.mode.toString,
+             datetimeRebaseSpec.timeZone,
+             int96RebaseSpec.mode.toString,
+             int96RebaseSpec.timeZone,
+             enableOffHeapColumnVector && taskContext.isDefined,
+             capacity)
+           // SPARK-37089: We cannot register a task completion listener to close this iterator here
+           // because downstream exec nodes have already registered their listeners. Since listeners
+           // are executed in reverse order of registration, a listener registered here would close the
+           // iterator while downstream exec nodes are still running. When off-heap column vectors are
+           // enabled, this can cause a use-after-free bug leading to a segfault.
+           //
+           // Instead, we use FileScanRDD's task completion listener to close this iterator.
+           val iter = new RecordReaderIterator(vectorizedReader)
+           try {
+             vectorizedReader.initialize(split, hadoopAttemptContext, Option.apply(fileFooter))
+             logDebug(s"Appending $partitionSchema ${file.partitionValues}")
+             vectorizedReader.initBatch(partitionSchema, file.partitionValues)
+             if (returningBatch) {
+               vectorizedReader.enableReturningBatches()
+             }
 
-          // UnsafeRowParquetRecordReader appends the columns internally to avoid another copy.
-          iter.asInstanceOf[Iterator[InternalRow]]
-        } catch {
-          case e: Throwable =>
-            // SPARK-23457: In case there is an exception in initialization, close the iterator to
-            // avoid leaking resources.
-            iter.close()
-            throw e
-        }
+             // UnsafeRowParquetRecordReader appends the columns internally to avoid another copy.
+             iter.asInstanceOf[Iterator[InternalRow]]
+           } catch {
+             case e: Throwable =>
+               // SPARK-23457: In case there is an exception in initialization, close the iterator to
+               // avoid leaking resources.
+               iter.close()
+               throw e
+           }
+         }
       } else {
         logDebug(s"Falling back to parquet-mr")
         // ParquetRecordReader returns InternalRow

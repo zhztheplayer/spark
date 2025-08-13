@@ -222,6 +222,17 @@ object ParquetUtils extends Logging {
   }
 
   /**
+   * Whether Velox columnar read is supported for the input `schema`.
+   */
+  def isVeloxBatchReadSupportedForSchema(sqlConf: SQLConf, schema: StructType): Boolean =
+    sqlConf.parquetVectorizedReaderEnabled && sqlConf.parquetVeloxVectorizedReaderEnabled &&
+      schema.forall(f => isVeloxBatchReadSupported(sqlConf, f.dataType))
+
+  def isVeloxBatchReadSupported(sqlConf: SQLConf, dt: DataType): Boolean = {
+    true
+  }
+
+  /**
    * When the partial aggregates (Max/Min/Count) are pushed down to Parquet, we don't need to
    * createRowBaseReader to read data from Parquet and aggregate at Spark layer. Instead we want
    * to get the partial aggregates (Max/Min/Count) result using the statistics information
