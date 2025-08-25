@@ -40,14 +40,14 @@ import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FileFormat, 
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.util.SerializableConfiguration;
 
-class VeloxParquetFormat extends ParquetFileFormat {
+class VeloxParquetFileFormat extends ParquetFileFormat {
   override def vectorTypes(
       requiredSchema: StructType,
       partitionSchema: StructType,
       sqlConf: SQLConf): Option[Seq[String]] = {
     val resultSchema = StructType(partitionSchema.fields ++ requiredSchema.fields)
     val enableVeloxVectorizedReader: Boolean =
-      VeloxParquetFormat.isVeloxBatchReadSupportedForSchema(sqlConf, resultSchema)
+      VeloxParquetFileFormat.isVeloxBatchReadSupportedForSchema(sqlConf, resultSchema)
     if (enableVeloxVectorizedReader) {
       return Option(
         Seq.fill(requiredSchema.fields.length)(classOf[ArrowColumnVector].getName) ++ Seq.fill(
@@ -63,7 +63,7 @@ class VeloxParquetFormat extends ParquetFileFormat {
    */
   override def supportBatch(sparkSession: SparkSession, schema: StructType): Boolean = {
     val sqlConf = sparkSession.sessionState.conf
-    val supportBatch = VeloxParquetFormat.isVeloxBatchReadSupportedForSchema(sqlConf, schema)
+    val supportBatch = VeloxParquetFileFormat.isVeloxBatchReadSupportedForSchema(sqlConf, schema)
     if (supportBatch) {
       return true
     }
@@ -113,7 +113,7 @@ class VeloxParquetFormat extends ParquetFileFormat {
     val enableOffHeapColumnVector = sqlConf.offHeapColumnVectorEnabled
     val enableVectorizedReader: Boolean = sqlConf.parquetVectorizedReaderEnabled
     val enableVeloxVectorizedReader: Boolean =
-      VeloxParquetFormat.isVeloxBatchReadSupportedForSchema(sqlConf, requiredSchema)
+      VeloxParquetFileFormat.isVeloxBatchReadSupportedForSchema(sqlConf, requiredSchema)
     val enableRecordFilter: Boolean = sqlConf.parquetRecordFilterEnabled
     val timestampConversion: Boolean = sqlConf.isParquetINT96TimestampConversion
     val capacity = sqlConf.parquetVectorizedReaderBatchSize
@@ -228,7 +228,7 @@ class VeloxParquetFormat extends ParquetFileFormat {
   }
 }
 
-object VeloxParquetFormat {
+object VeloxParquetFileFormat {
 
   def isVeloxBatchReadSupportedForSchema(sqlConf: SQLConf, schema: StructType): Boolean =
     sqlConf.parquetVectorizedReaderEnabled && sqlConf.parquetVeloxVectorizedReaderEnabled &&
