@@ -18,9 +18,6 @@
 package org.apache.spark.sql.execution.datasources.parquet.velox;
 
 import scala.collection.JavaConverters._
-import org.apache.spark.sql.execution.datasources.parquet.{ParquetFileFormat, ParquetFooterReader, ParquetOptions, ParquetReadSupport, ParquetUtils, ParquetWriteSupport, VeloxVectorizedParquetRecordReader}
-import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{ArrayType, AtomicType, DayTimeIntervalType, MapType, StructField, StructType, TimestampNTZType, UserDefinedType}
 import scala.collection.Seq
 
 import org.apache.hadoop.conf.Configuration
@@ -31,8 +28,11 @@ import org.apache.parquet.hadoop.ParquetInputFormat
 import org.apache.spark.TaskContext
 
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.execution.datasources.parquet._
 import org.apache.spark.sql.execution.datasources.parquet.ParquetUtils.{hasFieldIds, isBatchReadSupported}
-import org.apache.spark.sql.execution.vectorized.{ConstantColumnVector, OffHeapColumnVector, OnHeapColumnVector}
+import org.apache.spark.sql.execution.vectorized.ConstantColumnVector
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ArrowColumnVector
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
@@ -79,12 +79,8 @@ class VeloxParquetFormat extends ParquetFileFormat {
       options: Map[String, String],
       hadoopConf: Configuration): PartitionedFile => Iterator[InternalRow] = {
     hadoopConf.set(ParquetInputFormat.READ_SUPPORT_CLASS, classOf[ParquetReadSupport].getName)
-    hadoopConf.set(
-      ParquetReadSupport.SPARK_ROW_REQUESTED_SCHEMA,
-      requiredSchema.json)
-    hadoopConf.set(
-      ParquetWriteSupport.SPARK_ROW_SCHEMA,
-      requiredSchema.json)
+    hadoopConf.set(ParquetReadSupport.SPARK_ROW_REQUESTED_SCHEMA, requiredSchema.json)
+    hadoopConf.set(ParquetWriteSupport.SPARK_ROW_SCHEMA, requiredSchema.json)
     hadoopConf.set(
       SQLConf.SESSION_LOCAL_TIMEZONE.key,
       sparkSession.sessionState.conf.sessionLocalTimeZone)
@@ -111,7 +107,6 @@ class VeloxParquetFormat extends ParquetFileFormat {
 
     val broadcastedHadoopConf =
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
-
 
     val resultSchema = StructType(partitionSchema.fields ++ requiredSchema.fields)
     val sqlConf = sparkSession.sessionState.conf
@@ -172,7 +167,8 @@ class VeloxParquetFormat extends ParquetFileFormat {
           footerFileMetaData.getKeyValueMetaData.get,
           datetimeRebaseModeInRead)
         val int96RebaseSpec = DataSourceUtils.int96RebaseSpec(
-          footerFileMetaData.getKeyValueMetaData.get, int96RebaseModeInRead)
+          footerFileMetaData.getKeyValueMetaData.get,
+          int96RebaseModeInRead)
 
         def isCreatedByParquetMr: Boolean =
           footerFileMetaData.getCreatedBy().startsWith("parquet-mr")
@@ -182,7 +178,6 @@ class VeloxParquetFormat extends ParquetFileFormat {
           } else {
             None
           }
-
 
         val attemptId = new TaskAttemptID(new TaskID(new JobID(), TaskType.MAP, 0), 0)
         val hadoopAttemptContext =

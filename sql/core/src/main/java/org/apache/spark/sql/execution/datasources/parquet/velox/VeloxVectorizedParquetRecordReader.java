@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.execution.datasources.parquet;
+package org.apache.spark.sql.execution.datasources.parquet.velox;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
@@ -25,7 +25,6 @@ import io.github.zhztheplayer.velox4j.config.Config;
 import io.github.zhztheplayer.velox4j.config.ConnectorConfig;
 import io.github.zhztheplayer.velox4j.connector.*;
 import io.github.zhztheplayer.velox4j.data.RowVector;
-import io.github.zhztheplayer.velox4j.exception.VeloxException;
 import io.github.zhztheplayer.velox4j.expression.CastTypedExpr;
 import io.github.zhztheplayer.velox4j.expression.FieldAccessTypedExpr;
 import io.github.zhztheplayer.velox4j.expression.TypedExpr;
@@ -52,7 +51,6 @@ import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.parquet.HadoopReadOptions;
 import org.apache.parquet.ParquetReadOptions;
-import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.hadoop.BadConfigurationException;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.ParquetInputFormat;
@@ -61,11 +59,11 @@ import org.apache.parquet.hadoop.api.ReadSupport;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
 import org.apache.parquet.hadoop.util.ConfigurationUtil;
 import org.apache.parquet.hadoop.util.HadoopInputFile;
-import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.MessageType;
 import org.apache.spark.sql.catalyst.InternalRow;
-import org.apache.spark.sql.execution.datasources.parquet.velox.VeloxInitializer;
-import org.apache.spark.sql.execution.datasources.parquet.velox.VeloxConverter;
+import org.apache.spark.sql.execution.datasources.parquet.ParquetColumn;
+import org.apache.spark.sql.execution.datasources.parquet.ParquetReadSupport$;
+import org.apache.spark.sql.execution.datasources.parquet.ParquetToSparkSchemaConverter;
 import org.apache.spark.sql.execution.vectorized.ColumnVectorUtils;
 import org.apache.spark.sql.execution.vectorized.ConstantColumnVector;
 import org.apache.spark.sql.sources.And;
