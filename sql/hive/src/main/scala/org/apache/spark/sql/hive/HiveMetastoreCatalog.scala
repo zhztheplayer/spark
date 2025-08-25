@@ -23,8 +23,8 @@ import scala.util.control.NonFatal
 
 import com.google.common.util.concurrent.Striped
 import org.apache.hadoop.fs.Path
-
 import org.apache.spark.SparkException
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.{FullQualifiedTableName, TableIdentifier}
@@ -33,7 +33,8 @@ import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.types.DataTypeUtils
 import org.apache.spark.sql.connector.catalog.CatalogManager
 import org.apache.spark.sql.execution.datasources._
-import org.apache.spark.sql.execution.datasources.parquet.{ParquetFileFormat, ParquetOptions}
+import org.apache.spark.sql.execution.datasources.parquet.ParquetOptions
+import org.apache.spark.sql.execution.datasources.parquet.velox.VeloxParquetFileFormat
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.HiveCaseSensitiveInferenceMode._
 import org.apache.spark.sql.internal.SQLConf.PartitionOverwriteMode
@@ -138,7 +139,8 @@ private[hive] class HiveMetastoreCatalog(sparkSession: SparkSession) extends Log
       val options = relation.tableMeta.properties.filterKeys(isParquetProperty).toMap ++
         relation.tableMeta.storage.properties + (ParquetOptions.MERGE_SCHEMA ->
         SQLConf.get.getConf(HiveUtils.CONVERT_METASTORE_PARQUET_WITH_SCHEMA_MERGING).toString)
-        convertToLogicalRelation(relation, options, classOf[ParquetFileFormat], "parquet", isWrite)
+        convertToLogicalRelation(
+          relation, options, classOf[VeloxParquetFileFormat], "parquet", isWrite)
     } else {
       val options = relation.tableMeta.properties.filterKeys(isOrcProperty).toMap ++
         relation.tableMeta.storage.properties
