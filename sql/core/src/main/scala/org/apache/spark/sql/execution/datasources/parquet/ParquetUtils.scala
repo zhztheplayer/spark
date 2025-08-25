@@ -17,6 +17,7 @@
 package org.apache.spark.sql.execution.datasources.parquet
 
 import java.util
+
 import scala.collection.mutable
 import scala.language.existentials
 
@@ -30,8 +31,8 @@ import org.apache.parquet.hadoop.util.ContextUtil
 import org.apache.parquet.io.api.Binary
 import org.apache.parquet.schema.{PrimitiveType, Types}
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
-import org.apache.spark.SparkException
 
+import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.SparkSession
@@ -43,7 +44,7 @@ import org.apache.spark.sql.execution.datasources.{AggregatePushDownUtils, Outpu
 import org.apache.spark.sql.execution.datasources.v2.V2ColumnUtils
 import org.apache.spark.sql.internal.{LegacyBehaviorPolicy, SQLConf}
 import org.apache.spark.sql.internal.SQLConf.PARQUET_AGGREGATE_PUSHDOWN_ENABLED
-import org.apache.spark.sql.types.{ArrayType, AtomicType, DataType, DayTimeIntervalType, MapType, StructField, StructType, TimestampNTZType, UserDefinedType}
+import org.apache.spark.sql.types.{ArrayType, AtomicType, DataType, MapType, StructField, StructType, UserDefinedType}
 
 object ParquetUtils extends Logging {
 
@@ -218,38 +219,6 @@ object ParquetUtils extends Logging {
       isBatchReadSupported(sqlConf, udt.sqlType)
     case _ =>
       false
-  }
-
-  /**
-   * Whether Velox columnar read is supported for the input `schema`.
-   */
-  def isVeloxBatchReadSupportedForSchema(sqlConf: SQLConf, schema: StructType): Boolean =
-    sqlConf.parquetVectorizedReaderEnabled && sqlConf.parquetVeloxVectorizedReaderEnabled &&
-      !hasFieldIds(schema) && schema.forall(f => isVeloxBatchReadSupported(sqlConf, f))
-
-  def isVeloxBatchReadSupported(sqlConf: SQLConf, f: StructField): Boolean = {
-    f.dataType match {
-      case _: TimestampNTZType => // Velox doesn't support it.
-        false
-      case _: DayTimeIntervalType => // Velox's interval type is in millisecond precision.
-        false
-      case _: AtomicType =>
-        true
-      case at: ArrayType =>
-        sqlConf.parquetVectorizedReaderNestedColumnEnabled &&
-          isBatchReadSupported(sqlConf, at.elementType)
-      case mt: MapType =>
-        sqlConf.parquetVectorizedReaderNestedColumnEnabled &&
-          isBatchReadSupported(sqlConf, mt.keyType) &&
-          isBatchReadSupported(sqlConf, mt.valueType)
-      case st: StructType =>
-        sqlConf.parquetVectorizedReaderNestedColumnEnabled &&
-          st.fields.forall(f => isBatchReadSupported(sqlConf, f.dataType))
-      case udt: UserDefinedType[_] =>
-        isBatchReadSupported(sqlConf, udt.sqlType)
-      case _ =>
-        false
-    }
   }
 
   /**
