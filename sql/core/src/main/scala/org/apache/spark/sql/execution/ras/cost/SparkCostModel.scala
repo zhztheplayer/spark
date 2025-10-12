@@ -19,15 +19,16 @@ package org.apache.spark.sql.execution.ras.cost
 
 import org.apache.gluten.ras.{Cost, CostModel}
 
-import org.apache.spark.sql.execution.{PlanLater, SparkPlan}
+import org.apache.spark.sql.execution.{FileSourceScanExec, PlanLater, SparkPlan}
+import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
+import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, FileScan}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, CartesianProductExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.execution.ras.plan.GroupLeafExec
 
 object SparkCostModel extends CostModel[SparkPlan] {
   private val infLongCost = Long.MaxValue
 
   override def costOf(node: SparkPlan): LongCost = node match {
-    case _: GroupLeafExec => throw new IllegalStateException()
-    case _: PlanLater => makeInfCost()
     case _ => LongCost(longCostOf(node))
   }
 
@@ -52,8 +53,28 @@ object SparkCostModel extends CostModel[SparkPlan] {
       (n.children.map(longCostOf).toSeq :+ selfCost).reduce[Long](safeSum)
   }
 
-  private def selfLongCostOf(node: SparkPlan): Long = {
-    1
+  private def selfLongCostOf(node: SparkPlan): Long = node match {
+    case _: GroupLeafExec => throw new IllegalStateException()
+    case _: PlanLater => infLongCost
+    case _: HashAggregateExec => 1000
+    case _: ObjectHashAggregateExec => 1000
+    case _: SortAggregateExec => 2000
+    case _: BroadcastHashJoinExec => 1000
+    case _: ShuffledHashJoinExec => 2000
+    case _: SortMergeJoinExec => 3000
+    case _: CartesianProductExec => 10000
+    case _: BroadcastNestedLoopJoinExec => 150000
+    case f: FileSourceScanExec =>
+      val filterStringLength = f.metadata("PushedFilters").length
+      10000 + f.output.size * 1000 - filterStringLength
+    case d: DataSourceV2ScanExecBase =>
+      val filterStringLength = d.scan match {
+        case f: FileScan =>
+          f.getMetaData()("PushedFilters").length
+        case _ => 0
+      }
+      10000 + d.output.size * 1000 - filterStringLength
+    case _ => 10
   }
 }
 
