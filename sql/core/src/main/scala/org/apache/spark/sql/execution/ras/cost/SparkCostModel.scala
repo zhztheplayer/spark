@@ -19,9 +19,11 @@ package org.apache.spark.sql.execution.ras.cost
 
 import org.apache.gluten.ras.{Cost, CostModel}
 
-import org.apache.spark.sql.execution.{FileSourceScanExec, PlanLater, SparkPlan}
+import org.apache.spark.sql.catalyst.expressions.SortOrder
+import org.apache.spark.sql.execution.{FileSourceScanExec, PlanLater, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, FileScan}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, CartesianProductExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.execution.ras.plan.GroupLeafExec
 
@@ -56,14 +58,22 @@ object SparkCostModel extends CostModel[SparkPlan] {
   private def selfLongCostOf(node: SparkPlan): Long = node match {
     case _: GroupLeafExec => throw new IllegalStateException()
     case _: PlanLater => infLongCost
-    case _: HashAggregateExec => 1000
-    case _: ObjectHashAggregateExec => 1000
-    case _: SortAggregateExec => 2000
+    case _: ShuffleExchangeExec => 3500
+    case _: BroadcastExchangeExec => 3500
+    case _: SortExec => 3500
+    case _: HashAggregateExec => 3000
+    case _: ObjectHashAggregateExec => 3000
+    case s: SortAggregateExec if s.groupingExpressions.nonEmpty && SortOrder.orderingSatisfies(
+      s.child.outputOrdering, s.requiredChildOrdering.head) =>
+      // SMJ + SAGG = 4500
+      // SHJ + HAGG = 5000
+      1500
+    case _: SortAggregateExec => 4000
     case _: BroadcastHashJoinExec => 1000
     case _: ShuffledHashJoinExec => 2000
     case _: SortMergeJoinExec => 3000
-    case _: CartesianProductExec => 10000
-    case _: BroadcastNestedLoopJoinExec => 150000
+    case _: CartesianProductExec => 30000
+    case _: BroadcastNestedLoopJoinExec => 40000
     case f: FileSourceScanExec =>
       val filterStringLength = f.metadata("PushedFilters").length
       10000 + f.output.size * 1000 - filterStringLength

@@ -237,6 +237,13 @@ object SQLConf {
     }
   }
 
+  val RAS_ENABLED = buildConf("spark.sql.ras.enabled")
+    .internal()
+    .doc("Whether to enable RAS optimzier.")
+    .version("3.5.0")
+    .booleanConf
+    .createWithDefault(false)
+
   val ANALYZER_MAX_ITERATIONS = buildConf("spark.sql.analyzer.maxIterations")
     .internal()
     .doc("The max number of iterations the analyzer runs.")
@@ -4559,6 +4566,8 @@ class SQLConf extends Serializable with Logging with SqlApiConf {
   @transient protected val reader = new ConfigReader(settings)
 
   /** ************************ Spark SQL Params/Hints ******************* */
+
+  def rasEnabled: Boolean = getConf(RAS_ENABLED)
 
   def analyzerMaxIterations: Int = getConf(ANALYZER_MAX_ITERATIONS)
 
