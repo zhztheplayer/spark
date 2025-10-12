@@ -33,7 +33,7 @@ class SparkPlanner(val session: SparkSession, val experimentalMethods: Experimen
   override def strategies: Seq[Strategy] =
     experimentalMethods.extraStrategies ++
       extraPlanningStrategies ++ (
-      RasStrategy ::
+      new RasStrategy(session) ::
       LogicalQueryStageStrategy ::
       PythonEvals ::
       new DataSourceV2Strategy(session) ::

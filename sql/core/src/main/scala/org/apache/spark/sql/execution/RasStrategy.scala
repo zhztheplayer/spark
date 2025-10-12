@@ -18,28 +18,53 @@
 package org.apache.spark.sql.execution
 
 import org.apache.gluten.ras.{Optimization, RasExplain}
-import org.apache.gluten.ras.rule.RasRule
+import org.apache.gluten.ras.path.Pattern
+import org.apache.gluten.ras.property.PropertySet
+import org.apache.gluten.ras.rule.{RasRule, Shape, Shapes}
 
 import org.apache.spark.sql.execution.ras.cost.SparkCostModel
 import org.apache.spark.sql.execution.ras.metadata.SparkMetadataModel
 import org.apache.spark.sql.execution.ras.plan.SparkPlanModel
 import org.apache.spark.sql.execution.ras.property.SparkPropertyModel
-import org.apache.spark.sql.Strategy
+import org.apache.spark.sql.{ExperimentalMethods, SparkSession, Strategy}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, ReturnAnswer}
+import org.apache.spark.sql.execution.adaptive.LogicalQueryStageStrategy
+import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Strategy
+import org.apache.spark.sql.execution.datasources.{DataSourceStrategy, FileSourceStrategy}
 
-object RasStrategy extends Strategy {
+class RasStrategy(val session: SparkSession)
+  extends Strategy {
+
+  private val fakeSparkPlanner = new SparkPlanner(session, new ExperimentalMethods())
+
   private def optimization: Optimization[SparkPlan] = Optimization[SparkPlan](
     SparkPlanModel,
     SparkCostModel,
     SparkMetadataModel,
     SparkPropertyModel,
     SparkExplain,
-    RasRule.Factory.reuse(Nil)
+    RasRule.Factory.reuse(
+      AsRasStrategyRule(LogicalQueryStageStrategy) ::
+      AsRasStrategyRule(fakeSparkPlanner.PythonEvals) ::
+      AsRasStrategyRule(new DataSourceV2Strategy(session)) ::
+      AsRasStrategyRule(FileSourceStrategy) ::
+      AsRasStrategyRule(DataSourceStrategy) ::
+      AsRasStrategyRule(fakeSparkPlanner.SpecialLimits) ::
+      AsRasStrategyRule(fakeSparkPlanner.Aggregation) ::
+      AsRasStrategyRule(fakeSparkPlanner.Window) ::
+      AsRasStrategyRule(fakeSparkPlanner.WindowGroupLimit) ::
+      AsRasStrategyRule(fakeSparkPlanner.JoinSelection) ::
+      AsRasStrategyRule(fakeSparkPlanner.InMemoryScans) ::
+      AsRasStrategyRule(fakeSparkPlanner.SparkScripts) ::
+      AsRasStrategyRule(fakeSparkPlanner.BasicOperators) ::
+      Nil)
   )
 
   override def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
     case ReturnAnswer(root) =>
-      Nil
+      val planner = optimization.newPlanner(PlanLater(root), PropertySet(Nil))
+      val out = planner.plan()
+      Seq(out)
     case _ =>
       Nil
   }
@@ -47,6 +72,16 @@ object RasStrategy extends Strategy {
 
   private object SparkExplain extends RasExplain[SparkPlan] {
     override def describeNode(node: SparkPlan): String = node.nodeName
+  }
+
+  private case class AsRasStrategyRule(strategy: Strategy) extends RasRule[SparkPlan] {
+    override def shift(node: SparkPlan): Iterable[SparkPlan] = node match {
+      case PlanLater(logicalPlan) =>
+        strategy.apply(logicalPlan)
+    }
+
+    override def shape(): Shape[SparkPlan] =
+      Shapes.pattern(Pattern.leaf[SparkPlan](Pattern.Matchers.clazz(classOf[PlanLater])).build())
   }
 }
 
