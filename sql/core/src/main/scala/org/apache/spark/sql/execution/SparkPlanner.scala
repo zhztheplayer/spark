@@ -21,10 +21,6 @@ import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.SQLConfHelper
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.execution.adaptive.LogicalQueryStageStrategy
-import org.apache.spark.sql.execution.aggregate.AggUtils
-import org.apache.spark.sql.execution.datasources.{DataSourceStrategy, FileSourceStrategy}
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Strategy
 
 class SparkPlanner(val session: SparkSession, val experimentalMethods: ExperimentalMethods)
   extends SparkStrategies with SQLConfHelper {
@@ -33,21 +29,7 @@ class SparkPlanner(val session: SparkSession, val experimentalMethods: Experimen
 
   override def strategies: Seq[Strategy] =
     experimentalMethods.extraStrategies ++
-      extraPlanningStrategies ++ (
-      new RasStrategy(session) ::
-      LogicalQueryStageStrategy ::
-      PythonEvals ::
-      new DataSourceV2Strategy(session) ::
-      FileSourceStrategy ::
-      DataSourceStrategy ::
-      SpecialLimits ::
-      Aggregation(AggUtils.forceApplySortAggregate(conf)) ::
-      Window ::
-      WindowGroupLimit ::
-      JoinSelection(false) ::
-      InMemoryScans ::
-      SparkScripts ::
-      BasicOperators :: Nil)
+      extraPlanningStrategies ++ (new RasStrategy(session) :: Nil)
 
   /**
    * Override to add extra planning strategies to the planner. These strategies are tried after

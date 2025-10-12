@@ -17,7 +17,8 @@
 package org.apache.spark.sql.execution.ras.property
 
 import org.apache.gluten.ras._
-import org.apache.gluten.ras.rule.{EnforcerRuleFactory, Shape, Shapes}
+import org.apache.gluten.ras.property.PropertySet
+import org.apache.gluten.ras.rule.{EnforcerRuleFactory, RasRule, Shape, Shapes}
 
 import org.apache.spark.sql.execution._
 
@@ -25,18 +26,41 @@ object SparkPropertyModel extends PropertyModel[SparkPlan] {
   override def propertyDefs: Seq[PropertyDef[SparkPlan, _ <: Property[SparkPlan]]] =
     Seq(DistDef, OrdDef)
 
-  override def newEnforcerRuleFactory(): EnforcerRuleFactory[SparkPlan] =
-    EnforcerRuleFactory.fromSubRules(
-      Seq(
-        new EnforcerRuleFactory.SubRuleFactory[SparkPlan] {
-          override def newSubRule(constraintDef: PropertyDef[SparkPlan, _ <: Property[SparkPlan]]):
-          EnforcerRuleFactory.SubRule[SparkPlan] = constraintDef match {
-            case DistDef => DistDef.enforcerRule
-            case OrdDef => OrdDef.enforcerRule
-          }
+  override def newEnforcerRuleFactory(): EnforcerRuleFactory[SparkPlan] = {
+    new EnforcerRuleFactory[SparkPlan] {
+      override def newEnforcerRules(
+        constraintSet: PropertySet[SparkPlan]): Seq[RasRule[SparkPlan]] = {
+        val distReq = constraintSet.get(DistDef).asInstanceOf[Dist.Req]
+        val ordReq = constraintSet.get(OrdDef).asInstanceOf[Ord.Req]
 
-          override def ruleShape: Shape[SparkPlan] = Shapes.fixedHeight(1)
+        val distRule = new RasRule[SparkPlan] {
+          override def shift(node: SparkPlan): Iterable[SparkPlan] = {
+            val out = DistDef.enforcerRule.enforce(node, distReq)
+            out
+          }
+          override def shape(): Shape[SparkPlan] = Shapes.fixedHeight(1)
         }
-      )
-    )
+
+        val ordRule = new RasRule[SparkPlan] {
+          override def shift(node: SparkPlan): Iterable[SparkPlan] = {
+            val out = OrdDef.enforcerRule.enforce(node, ordReq)
+            out
+          }
+          override def shape(): Shape[SparkPlan] = Shapes.fixedHeight(1)
+        }
+
+        val distOrdRule = new RasRule[SparkPlan] {
+          override def shift(node: SparkPlan): Iterable[SparkPlan] = {
+            val out = Seq(node)
+              .flatMap(DistDef.enforcerRule.enforce(_, distReq))
+              .flatMap(OrdDef.enforcerRule.enforce(_, ordReq))
+            out
+          }
+          override def shape(): Shape[SparkPlan] = Shapes.fixedHeight(1)
+        }
+
+        Seq(distRule, ordRule, distOrdRule)
+      }
+    }
+  }
 }

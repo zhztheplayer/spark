@@ -22,7 +22,7 @@ import org.apache.gluten.ras.rule.EnforcerRuleFactory
 
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.SQLConfHelper
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{SortExec, SparkPlan}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, REPARTITION_BY_COL, REPARTITION_BY_NUM, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.ras.plan.GroupLeafExec
 
@@ -49,8 +49,12 @@ object DistDef extends PropertyDef[SparkPlan, Dist] {
   override def getChildrenConstraints(
       plan: SparkPlan,
       constraint: Property[SparkPlan]): Seq[Dist] = {
-    // TODO: Propagate constraints?
-    plan.requiredChildDistribution.map(Dist.Req)
+    plan match {
+      // TODO: More propagate constraints?
+      case s: SortExec if !s.global => Seq(constraint.asInstanceOf[Dist.Req])
+      case _ =>
+        plan.requiredChildDistribution.map(Dist.Req)
+    }
   }
   override def satisfies(
       property: Property[SparkPlan],
@@ -70,7 +74,8 @@ object DistDef extends PropertyDef[SparkPlan, Dist] {
       .withDistribution(constraint.asInstanceOf[Dist.Req].req)
   }
 
-  val enforcerRule = new EnforcerRuleFactory.SubRule[SparkPlan] with SQLConfHelper {
+  val enforcerRule: EnforcerRuleFactory.SubRule[SparkPlan] =
+    new EnforcerRuleFactory.SubRule[SparkPlan] with SQLConfHelper {
     override def enforce(
         node: SparkPlan,
         constraint: Property[SparkPlan]): Iterable[SparkPlan] = {

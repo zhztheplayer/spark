@@ -78,7 +78,7 @@ class RasStrategy(val session: SparkSession)
         child transformUp {
           case s: ShuffleExchangeExec => s.child
           case b: BroadcastExchangeExec => b.child
-          case s: SortExec => s.child
+          case s: SortExec if !s.global => s.child
         }
     })
 

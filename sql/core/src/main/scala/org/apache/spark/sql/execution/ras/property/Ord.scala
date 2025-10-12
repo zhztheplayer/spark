@@ -59,7 +59,6 @@ object OrdDef extends PropertyDef[SparkPlan, Ord] {
       return true
     }
     SortOrder.orderingSatisfies(property.asInstanceOf[Ord.Prop].prop, req.req)
-
   }
 
   override def assignToGroup(
@@ -70,7 +69,8 @@ object OrdDef extends PropertyDef[SparkPlan, Ord] {
       .withOrdering(constraint.asInstanceOf[Ord.Req].req)
   }
 
-  val enforcerRule = new EnforcerRuleFactory.SubRule[SparkPlan] with SQLConfHelper {
+  val enforcerRule: EnforcerRuleFactory.SubRule[SparkPlan] =
+    new EnforcerRuleFactory.SubRule[SparkPlan] with SQLConfHelper {
     override def enforce(
         node: SparkPlan,
         constraint: Property[SparkPlan]): Iterable[SparkPlan] = {
@@ -84,7 +84,6 @@ object OrdDef extends PropertyDef[SparkPlan, Ord] {
           child
         case (child, requiredOrdering) =>
           SortExec(requiredOrdering, global = false, child = child)
-
       }
       Seq(out)
     }
