@@ -67,7 +67,7 @@ case class WriteFilesExec(
     bucketSpec: Option[BucketSpec],
     options: Map[String, String],
     staticPartitions: TablePartitionSpec) extends UnaryExecNode {
-  override def output: Seq[Attribute] = Seq.empty
+  override def output: Seq[Attribute] = child.output
 
   override protected def doExecuteWrite(
       writeFilesSpec: WriteFilesSpec): RDD[WriterCommitMessage] = {
