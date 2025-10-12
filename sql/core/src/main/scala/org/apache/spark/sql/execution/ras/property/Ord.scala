@@ -83,7 +83,9 @@ object OrdDef extends PropertyDef[SparkPlan, Ord] {
             if SortOrder.orderingSatisfies(child.outputOrdering, requiredOrdering) =>
           child
         case (child, requiredOrdering) =>
-          SortExec(requiredOrdering, global = false, child = child)
+          val sort = SortExec(requiredOrdering, global = false, child = child)
+          sort.copyTagsFrom(child)
+          sort
       }
       Seq(out)
     }

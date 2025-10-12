@@ -87,7 +87,9 @@ object DistDef extends PropertyDef[SparkPlan, Dist] {
         case (child, distribution) if child.outputPartitioning.satisfies(distribution) =>
           child
         case (child, BroadcastDistribution(mode)) =>
-          BroadcastExchangeExec(mode, child)
+          val be = BroadcastExchangeExec(mode, child)
+          be.copyTagsFrom(child)
+          be
         case (child, distribution) =>
           val numPartitions = distribution.requiredNumPartitions
             .getOrElse(conf.numShufflePartitions)
@@ -96,10 +98,12 @@ object DistDef extends PropertyDef[SparkPlan, Dist] {
           } else {
             REPARTITION_BY_COL
           }
-          ShuffleExchangeExec(
+          val se = ShuffleExchangeExec(
             distribution.createPartitioning(numPartitions),
             child,
             shuffleOrigin)
+          se.copyTagsFrom(child)
+          se
       }
       Seq(out)
     }
