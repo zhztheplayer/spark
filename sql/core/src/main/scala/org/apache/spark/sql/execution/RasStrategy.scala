@@ -25,12 +25,13 @@ import org.apache.gluten.ras.rule.{RasRule, Shape, Shapes}
 import org.apache.spark.sql.execution.ras.cost.SparkCostModel
 import org.apache.spark.sql.execution.ras.metadata.SparkMetadataModel
 import org.apache.spark.sql.execution.ras.plan.SparkPlanModel
-import org.apache.spark.sql.execution.ras.property.SparkPropertyModel
+import org.apache.spark.sql.execution.ras.property.{Dist, Ord, SparkPropertyModel}
 import org.apache.spark.sql.{ExperimentalMethods, SparkSession, Strategy}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, ReturnAnswer}
 import org.apache.spark.sql.execution.adaptive.LogicalQueryStageStrategy
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Strategy
 import org.apache.spark.sql.execution.datasources.{DataSourceStrategy, FileSourceStrategy}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 
 class RasStrategy(val session: SparkSession)
   extends Strategy {
@@ -63,11 +64,24 @@ class RasStrategy(val session: SparkSession)
 
   override def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
     case ReturnAnswer(root) =>
-      val planner = optimization.newPlanner(PlanLater(root), PropertySet(Nil))
-      val out = planner.plan()
-      Seq(out)
+      val planner = optimization.newPlanner(PlanLater(root), PropertySet(Seq(Dist.any, Ord.any)))
+      val optimized = planner.plan()
+      val removed = removeSortsAndExchanges(optimized)
+      Seq(removed)
     case _ =>
       Nil
+  }
+
+  private def removeSortsAndExchanges(plan: SparkPlan): SparkPlan = {
+    plan.withNewChildren(plan.children.map {
+      child =>
+        child transformUp {
+          case s: ShuffleExchangeExec => s.child
+          case b: BroadcastExchangeExec => b.child
+          case s: SortExec => s.child
+        }
+    })
+
   }
 
 

@@ -17,18 +17,26 @@
 package org.apache.spark.sql.execution.ras.property
 
 import org.apache.gluten.ras._
-import org.apache.gluten.ras.property.PropertySet
-import org.apache.gluten.ras.rule.{EnforcerRuleFactory, RasRule}
+import org.apache.gluten.ras.rule.{EnforcerRuleFactory, Shape, Shapes}
 
 import org.apache.spark.sql.execution._
 
 object SparkPropertyModel extends PropertyModel[SparkPlan] {
   override def propertyDefs: Seq[PropertyDef[SparkPlan, _ <: Property[SparkPlan]]] =
-    Nil
+    Seq(DistDef, OrdDef)
 
   override def newEnforcerRuleFactory(): EnforcerRuleFactory[SparkPlan] =
-    new EnforcerRuleFactory[SparkPlan] {
-      override def newEnforcerRules(
-        constraintSet: PropertySet[SparkPlan]): Seq[RasRule[SparkPlan]] = Nil
-    }
+    EnforcerRuleFactory.fromSubRules(
+      Seq(
+        new EnforcerRuleFactory.SubRuleFactory[SparkPlan] {
+          override def newSubRule(constraintDef: PropertyDef[SparkPlan, _ <: Property[SparkPlan]]):
+          EnforcerRuleFactory.SubRule[SparkPlan] = constraintDef match {
+            case DistDef => DistDef.enforcerRule
+            case OrdDef => OrdDef.enforcerRule
+          }
+
+          override def ruleShape: Shape[SparkPlan] = Shapes.fixedHeight(1)
+        }
+      )
+    )
 }

@@ -20,16 +20,18 @@ import org.apache.gluten.ras.GroupLeafBuilder
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.{LeafExecNode, SparkPlan}
 import java.util.concurrent.atomic.AtomicBoolean
 
+import org.apache.spark.sql.catalyst.plans.physical.{Distribution, Partitioning, UnknownPartitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.ras.metadata.{LogicalLink, SparkMetadata}
 
 // TODO: Make this inherit from GlutenPlan.
-case class GroupLeafExec(groupId: Int, metadata: SparkMetadata)
+case class GroupLeafExec(groupId: Int, metadata: SparkMetadata,
+  distReq: Distribution, orderingReq: Seq[SortOrder])
   extends LeafExecNode {
 
   private val frozen = new AtomicBoolean(false)
@@ -42,6 +44,7 @@ case class GroupLeafExec(groupId: Int, metadata: SparkMetadata)
   frozen.set(true)
 
   override protected def doExecute(): RDD[InternalRow] = throw new IllegalStateException()
+
   override def output: Seq[Attribute] = metadata.schema().output
 
   final override def supportsColumnar: Boolean = {
@@ -56,6 +59,21 @@ case class GroupLeafExec(groupId: Int, metadata: SparkMetadata)
     if (frozen.get()) {
       throw new UnsupportedOperationException()
     }
+  }
+
+  override def outputPartitioning: Partitioning = {
+    val numPartitions = distReq.requiredNumPartitions
+      .getOrElse(conf.numShufflePartitions)
+    distReq match {
+      case UnspecifiedDistribution =>
+        UnknownPartitioning(numPartitions)
+      case other =>
+        other.createPartitioning(numPartitions)
+    }
+  }
+
+  override def outputOrdering: Seq[SortOrder] = {
+    orderingReq
   }
 
   // Enclose mutable APIs.
@@ -80,15 +98,30 @@ case class GroupLeafExec(groupId: Int, metadata: SparkMetadata)
 object GroupLeafExec {
   class Builder private[GroupLeafExec] (override val id: Int) extends GroupLeafBuilder[SparkPlan] {
     private var metadata: SparkMetadata = _
+    private var distReq: Distribution = _
+    private var orderingReq: Seq[SortOrder] = _
 
     def withMetadata(metadata: SparkMetadata): Builder = {
       this.metadata = metadata
       this
     }
 
+    def withDistribution(distReq: Distribution): Builder = {
+      this.distReq = distReq
+      this
+    }
+
+
+    def withOrdering(orderingReq: Seq[SortOrder]): Builder = {
+      this.orderingReq = orderingReq
+      this
+    }
+
     override def build(): SparkPlan = {
       require(metadata != null)
-      GroupLeafExec(id, metadata)
+      require(distReq != null)
+      require(orderingReq != null)
+      GroupLeafExec(id, metadata, distReq, orderingReq)
     }
   }
 
