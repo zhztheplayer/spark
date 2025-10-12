@@ -169,7 +169,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
    *     Supports both equi-joins and non-equi-joins.
    *     Supports only inner like joins.
    */
-  object JoinSelection extends Strategy with JoinSelectionHelper {
+  case class JoinSelection(allAlternatives: Boolean) extends Strategy with JoinSelectionHelper {
     private val hintErrorHandler = conf.hintErrorHandler
 
     private def checkHintBuildSide(
@@ -282,19 +282,31 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
         }
 
         def createJoinWithoutHint() = {
-          createBroadcastHashJoin(false)
-            .orElse(createShuffleHashJoin(false))
-            .orElse(createSortMergeJoin())
-            .orElse(createCartesianProduct())
-            .getOrElse {
-              // This join could be very slow or OOM
-              // Build the smaller side unless the join requires a particular build side
-              // (e.g. NO_BROADCAST_AND_REPLICATION hint)
-              val requiredBuildSide = getBroadcastNestedLoopJoinBuildSide(hint)
-              val buildSide = requiredBuildSide.getOrElse(getSmallerSide(left, right))
-              Seq(joins.BroadcastNestedLoopJoinExec(
-                planLater(left), planLater(right), buildSide, joinType, j.condition))
-            }
+          def createBroadcastNestLoopJoin = {
+            // This join could be very slow or OOM
+            // Build the smaller side unless the join requires a particular build side
+            // (e.g. NO_BROADCAST_AND_REPLICATION hint)
+            val requiredBuildSide = getBroadcastNestedLoopJoinBuildSide(hint)
+            val buildSide = requiredBuildSide.getOrElse(getSmallerSide(left, right))
+            Seq(joins.BroadcastNestedLoopJoinExec(
+              planLater(left), planLater(right), buildSide, joinType, j.condition))
+          }
+
+          if (allAlternatives) {
+            createBroadcastHashJoin(false).getOrElse(Nil) ++
+              createShuffleHashJoin(false).getOrElse(Nil) ++
+              createSortMergeJoin().getOrElse(Nil) ++
+              createCartesianProduct().getOrElse(Nil) ++
+              createBroadcastNestLoopJoin
+          } else {
+            createBroadcastHashJoin(false)
+              .orElse(createShuffleHashJoin(false))
+              .orElse(createSortMergeJoin())
+              .orElse(createCartesianProduct())
+              .getOrElse {
+                createBroadcastNestLoopJoin
+              }
+          }
         }
 
         if (hint.isEmpty) {
@@ -448,7 +460,8 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
               rewrittenResultExpressions,
               stateVersion,
               conf.streamingSessionWindowMergeSessionInLocalPartition,
-              planLater(child))
+              planLater(child),
+              AggUtils.forceApplySortAggregate(conf))
 
           case None =>
             val stateVersion = conf.getConf(SQLConf.STREAMING_AGGREGATION_STATE_FORMAT_VERSION)
@@ -458,7 +471,8 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
               aggregateExpressions.map(expr => expr.asInstanceOf[AggregateExpression]),
               rewrittenResultExpressions,
               stateVersion,
-              planLater(child))
+              planLater(child),
+              AggUtils.forceApplySortAggregate(conf))
         }
 
       case _ => Nil
@@ -541,7 +555,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
   /**
    * Used to plan the aggregate operator for expressions based on the AggregateFunction2 interface.
    */
-  object Aggregation extends Strategy {
+  case class Aggregation(forceApplySortAggregate: Boolean) extends Strategy {
     def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
       case PhysicalAggregation(groupingExpressions, aggExpressions, resultExpressions, child)
         if !aggExpressions.exists(_.aggregateFunction.isInstanceOf[PythonUDAF]) =>
@@ -573,7 +587,8 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
               normalizedGroupingExpressions,
               aggExpressions,
               resultExpressions,
-              planLater(child))
+              planLater(child),
+              forceApplySortAggregate)
           } else {
             // functionsWithDistinct is guaranteed to be non-empty. Even though it may contain
             // more than one DISTINCT aggregate function, all of those functions will have the
@@ -605,7 +620,8 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
               distinctExpressions,
               normalizedNamedDistinctExpressions,
               resultExpressions,
-              planLater(child))
+              planLater(child),
+              forceApplySortAggregate)
           }
 
         aggregateOperator

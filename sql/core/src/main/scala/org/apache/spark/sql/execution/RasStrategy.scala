@@ -50,10 +50,11 @@ class RasStrategy(val session: SparkSession)
       AsRasStrategyRule(FileSourceStrategy) ::
       AsRasStrategyRule(DataSourceStrategy) ::
       AsRasStrategyRule(fakeSparkPlanner.SpecialLimits) ::
-      AsRasStrategyRule(fakeSparkPlanner.Aggregation) ::
+      AsRasStrategyRule(fakeSparkPlanner.Aggregation(true)) ::
+      AsRasStrategyRule(fakeSparkPlanner.Aggregation(false)) ::
       AsRasStrategyRule(fakeSparkPlanner.Window) ::
       AsRasStrategyRule(fakeSparkPlanner.WindowGroupLimit) ::
-      AsRasStrategyRule(fakeSparkPlanner.JoinSelection) ::
+      AsRasStrategyRule(fakeSparkPlanner.JoinSelection(true)) ::
       AsRasStrategyRule(fakeSparkPlanner.InMemoryScans) ::
       AsRasStrategyRule(fakeSparkPlanner.SparkScripts) ::
       AsRasStrategyRule(fakeSparkPlanner.BasicOperators) ::

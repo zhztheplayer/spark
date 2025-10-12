@@ -54,7 +54,8 @@ object AggUtils {
       aggregateAttributes: Seq[Attribute] = Nil,
       initialInputBufferOffset: Int = 0,
       resultExpressions: Seq[NamedExpression] = Nil,
-      child: SparkPlan): SparkPlan = {
+      child: SparkPlan,
+      forceSortAggregate: Boolean): SparkPlan = {
     createAggregate(
       requiredChildDistributionExpressions,
       isStreaming = true,
@@ -63,7 +64,8 @@ object AggUtils {
       aggregateAttributes = aggregateAttributes,
       initialInputBufferOffset = initialInputBufferOffset,
       resultExpressions = resultExpressions,
-      child = child)
+      child = child,
+      forceSortAggregate = forceSortAggregate)
   }
 
   private def createAggregate(
@@ -74,10 +76,10 @@ object AggUtils {
       aggregateAttributes: Seq[Attribute] = Nil,
       initialInputBufferOffset: Int = 0,
       resultExpressions: Seq[NamedExpression] = Nil,
-      child: SparkPlan): SparkPlan = {
+      child: SparkPlan,
+      forceSortAggregate: Boolean): SparkPlan = {
     val useHash = Aggregate.supportsHashAggregate(
       aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes))
-    val forceSortAggregate = forceApplySortAggregate(child.conf)
 
     if (useHash && !forceSortAggregate) {
       HashAggregateExec(
@@ -124,7 +126,9 @@ object AggUtils {
       groupingExpressions: Seq[NamedExpression],
       aggregateExpressions: Seq[AggregateExpression],
       resultExpressions: Seq[NamedExpression],
-      child: SparkPlan): Seq[SparkPlan] = {
+      child: SparkPlan,
+      forceSortAggregate: Boolean
+  ): Seq[SparkPlan] = {
     // Check if we can use HashAggregate.
 
     // 1. Create an Aggregate Operator for partial aggregations.
@@ -144,7 +148,8 @@ object AggUtils {
         aggregateAttributes = partialAggregateAttributes,
         initialInputBufferOffset = 0,
         resultExpressions = partialResultExpressions,
-        child = child)
+        child = child,
+        forceSortAggregate = forceSortAggregate)
 
     // If we have session window expression in aggregation, we add MergingSessionExec to
     // merge sessions with calculating aggregation values.
@@ -164,7 +169,8 @@ object AggUtils {
         aggregateAttributes = finalAggregateAttributes,
         initialInputBufferOffset = groupingExpressions.length,
         resultExpressions = resultExpressions,
-        child = interExec)
+        child = interExec,
+        forceSortAggregate = forceSortAggregate)
 
     finalAggregate :: Nil
   }
@@ -176,7 +182,8 @@ object AggUtils {
       distinctExpressions: Seq[Expression],
       normalizedNamedDistinctExpressions: Seq[NamedExpression],
       resultExpressions: Seq[NamedExpression],
-      child: SparkPlan): Seq[SparkPlan] = {
+      child: SparkPlan,
+      forceSortAggregate: Boolean): Seq[SparkPlan] = {
 
     // If we have session window expression in aggregation, we add UpdatingSessionsExec to
     // calculate sessions for input rows and update rows' session column, so that further
@@ -199,7 +206,8 @@ object AggUtils {
         aggregateAttributes = aggregateAttributes,
         resultExpressions = groupingAttributes ++ distinctAttributes ++
           aggregateExpressions.flatMap(_.aggregateFunction.inputAggBufferAttributes),
-        child = maySessionChild)
+        child = maySessionChild,
+        forceSortAggregate = forceSortAggregate)
     }
 
     // 2. Create an Aggregate Operator for partial merge aggregations.
@@ -215,7 +223,8 @@ object AggUtils {
         initialInputBufferOffset = (groupingAttributes ++ distinctAttributes).length,
         resultExpressions = groupingAttributes ++ distinctAttributes ++
           aggregateExpressions.flatMap(_.aggregateFunction.inputAggBufferAttributes),
-        child = partialAggregate)
+        child = partialAggregate,
+        forceSortAggregate = forceSortAggregate)
     }
 
     // 3. Create an Aggregate operator for partial aggregation (for distinct)
@@ -263,7 +272,8 @@ object AggUtils {
         aggregateAttributes = mergeAggregateAttributes ++ distinctAggregateAttributes,
         initialInputBufferOffset = (groupingAttributes ++ distinctAttributes).length,
         resultExpressions = partialAggregateResult,
-        child = partialMergeAggregate)
+        child = partialMergeAggregate,
+        forceSortAggregate = forceSortAggregate)
     }
 
     // 4. Create an Aggregate Operator for the final aggregation.
@@ -293,7 +303,8 @@ object AggUtils {
         aggregateAttributes = finalAggregateAttributes ++ distinctAggregateAttributes,
         initialInputBufferOffset = groupingAttributes.length,
         resultExpressions = resultExpressions,
-        child = partialDistinctAggregate)
+        child = partialDistinctAggregate,
+        forceSortAggregate = forceSortAggregate)
     }
 
     finalAndCompleteAggregate :: Nil
@@ -314,7 +325,8 @@ object AggUtils {
       functionsWithoutDistinct: Seq[AggregateExpression],
       resultExpressions: Seq[NamedExpression],
       stateFormatVersion: Int,
-      child: SparkPlan): Seq[SparkPlan] = {
+      child: SparkPlan,
+      forceSortAggregate: Boolean): Seq[SparkPlan] = {
 
     val groupingAttributes = groupingExpressions.map(_.toAttribute)
 
@@ -327,7 +339,8 @@ object AggUtils {
         aggregateAttributes = aggregateAttributes,
         resultExpressions = groupingAttributes ++
             aggregateExpressions.flatMap(_.aggregateFunction.inputAggBufferAttributes),
-        child = child)
+        child = child,
+        forceSortAggregate = forceSortAggregate)
     }
 
     val partialMerged1: SparkPlan = {
@@ -342,7 +355,8 @@ object AggUtils {
         initialInputBufferOffset = groupingAttributes.length,
         resultExpressions = groupingAttributes ++
             aggregateExpressions.flatMap(_.aggregateFunction.inputAggBufferAttributes),
-        child = partialAggregate)
+        child = partialAggregate,
+        forceSortAggregate = forceSortAggregate)
     }
 
     val restored = StateStoreRestoreExec(groupingAttributes, None, stateFormatVersion,
@@ -360,7 +374,8 @@ object AggUtils {
         initialInputBufferOffset = groupingAttributes.length,
         resultExpressions = groupingAttributes ++
             aggregateExpressions.flatMap(_.aggregateFunction.inputAggBufferAttributes),
-        child = restored)
+        child = restored,
+        forceSortAggregate = forceSortAggregate)
     }
     // Note: stateId and returnAllStates are filled in later with preparation rules
     // in IncrementalExecution.
@@ -387,7 +402,8 @@ object AggUtils {
         aggregateAttributes = finalAggregateAttributes,
         initialInputBufferOffset = groupingAttributes.length,
         resultExpressions = resultExpressions,
-        child = saved)
+        child = saved,
+        forceSortAggregate = forceSortAggregate)
     }
 
     finalAndCompleteAggregate :: Nil
@@ -420,7 +436,8 @@ object AggUtils {
       resultExpressions: Seq[NamedExpression],
       stateFormatVersion: Int,
       mergeSessionsInLocalPartition: Boolean,
-      child: SparkPlan): Seq[SparkPlan] = {
+      child: SparkPlan,
+      forceSortAggregate: Boolean): Seq[SparkPlan] = {
 
     val groupWithoutSessionExpression = groupingExpressions.filterNot { p =>
       p.semanticEquals(sessionExpression)
@@ -445,7 +462,8 @@ object AggUtils {
         aggregateAttributes = aggregateAttributes,
         resultExpressions = groupingAttributes ++
           aggregateExpressions.flatMap(_.aggregateFunction.inputAggBufferAttributes),
-        child = child)
+        child = child,
+        forceSortAggregate = forceSortAggregate)
     }
 
     val partialMerged1: SparkPlan = if (mergeSessionsInLocalPartition) {
@@ -520,7 +538,8 @@ object AggUtils {
         aggregateAttributes = finalAggregateAttributes,
         initialInputBufferOffset = groupingAttributes.length,
         resultExpressions = resultExpressions,
-        child = saved)
+        child = saved,
+        forceSortAggregate = forceSortAggregate)
     }
 
     finalAndCompleteAggregate :: Nil
@@ -584,7 +603,7 @@ object AggUtils {
    * Returns whether a sort aggregate should be force applied.
    * The config key is hard-coded because it's testing only and should not be exposed.
    */
-  private def forceApplySortAggregate(conf: SQLConf): Boolean = {
+  def forceApplySortAggregate(conf: SQLConf): Boolean = {
     Utils.isTesting &&
       conf.getConfString("spark.sql.test.forceApplySortAggregate", "false") == "true"
   }

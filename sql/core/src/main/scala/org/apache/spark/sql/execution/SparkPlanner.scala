@@ -22,6 +22,7 @@ import org.apache.spark.sql.catalyst.SQLConfHelper
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.adaptive.LogicalQueryStageStrategy
+import org.apache.spark.sql.execution.aggregate.AggUtils
 import org.apache.spark.sql.execution.datasources.{DataSourceStrategy, FileSourceStrategy}
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Strategy
 
@@ -40,10 +41,10 @@ class SparkPlanner(val session: SparkSession, val experimentalMethods: Experimen
       FileSourceStrategy ::
       DataSourceStrategy ::
       SpecialLimits ::
-      Aggregation ::
+      Aggregation(AggUtils.forceApplySortAggregate(conf)) ::
       Window ::
       WindowGroupLimit ::
-      JoinSelection ::
+      JoinSelection(false) ::
       InMemoryScans ::
       SparkScripts ::
       BasicOperators :: Nil)

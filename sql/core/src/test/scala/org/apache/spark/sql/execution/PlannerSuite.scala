@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.logical.{LocalRelation, LogicalPlan, Range, Repartition, RepartitionOperation, Union}
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanHelper, DisableAdaptiveExecution}
-import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
+import org.apache.spark.sql.execution.aggregate.{AggUtils, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.columnar.{InMemoryRelation, InMemoryTableScanExec}
 import org.apache.spark.sql.execution.exchange.{EnsureRequirements, REPARTITION_BY_COL, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, SortMergeJoinExec}
@@ -45,7 +45,8 @@ class PlannerSuite extends SharedSparkSession with AdaptiveSparkPlanHelper {
   private def testPartialAggregationPlan(query: LogicalPlan): Unit = {
     val planner = spark.sessionState.planner
     import planner._
-    val plannedOption = Aggregation(query).headOption
+    val plannedOption = Aggregation(
+      AggUtils.forceApplySortAggregate(planner.conf))(query).headOption
     val planned =
       plannedOption.getOrElse(
         fail(s"Could query play aggregation query $query. Is it an aggregation query?"))
