@@ -63,8 +63,10 @@ class RasStrategy(val session: SparkSession)
   )
 
   override def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
-    case ReturnAnswer(root) =>
-      val planner = optimization.newPlanner(PlanLater(root), PropertySet(Seq(Dist.any, Ord.any)))
+    case ReturnAnswer(logicalRoot) =>
+      val later = PlanLater(logicalRoot)
+      later.setLogicalLink(logicalRoot)
+      val planner = optimization.newPlanner(later, PropertySet(Seq(Dist.any, Ord.any)))
       val optimized = planner.plan()
       val removed = removeSortsAndExchanges(optimized)
       Seq(removed)
@@ -92,7 +94,17 @@ class RasStrategy(val session: SparkSession)
   private case class AsRasStrategyRule(strategy: Strategy) extends RasRule[SparkPlan] {
     override def shift(node: SparkPlan): Iterable[SparkPlan] = node match {
       case PlanLater(logicalPlan) =>
-        strategy.apply(logicalPlan)
+        val physicalPlans = strategy.apply(logicalPlan)
+        physicalPlans.foreach {
+          physicalPlan =>
+            physicalPlan.foreachUp {
+              case p @ PlanLater(l) =>
+                p.setLogicalLink(l)
+              case other =>
+                other.setLogicalLink(logicalPlan)
+            }
+        }
+        physicalPlans
     }
 
     override def shape(): Shape[SparkPlan] =
