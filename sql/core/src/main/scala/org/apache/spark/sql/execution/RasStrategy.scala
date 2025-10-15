@@ -64,11 +64,14 @@ class RasStrategy(val session: SparkSession)
 
   override def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
     case ReturnAnswer(logicalRoot) =>
+      val prev = System.nanoTime()
       val later = PlanLater(logicalRoot)
       later.setLogicalLink(logicalRoot)
       val planner = optimization.newPlanner(later, PropertySet(Seq(Dist.any, Ord.any)))
       val optimized = planner.plan()
       val removed = removeSortsAndExchanges(optimized)
+      val duration = System.nanoTime() - prev
+      logWarning(s"RAS optimization duration: ${duration / 1000000L} ms")
       Seq(removed)
     case _ =>
       Nil
