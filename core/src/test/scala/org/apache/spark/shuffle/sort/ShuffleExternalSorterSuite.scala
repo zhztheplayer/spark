@@ -114,4 +114,53 @@ class ShuffleExternalSorterSuite extends SparkFunSuite with LocalSparkContext wi
       errorClass = "UNABLE_TO_ACQUIRE_MEMORY",
       parameters = Map("requestedBytes" -> "800", "receivedBytes" -> "400"))
   }
+
+  test("spill triggered by another memory consumer should be no-op") {
+    val conf = new SparkConf()
+      .setMaster("local[1]")
+      .setAppName("ShuffleExternalSorterSuite")
+      .set(IS_TESTING, true)
+      .set(TEST_MEMORY, 1600L)
+      .set(MEMORY_FRACTION, 0.9999)
+
+    sc = new SparkContext(conf)
+
+    val memoryManager = UnifiedMemoryManager(conf, 1)
+    val taskMemoryManager = new TaskMemoryManager(memoryManager, 0)
+    val taskContext = mock[TaskContext]
+    val taskMetrics = new TaskMetrics
+    when(taskContext.taskMetrics()).thenReturn(taskMetrics)
+    val sorter = new ShuffleExternalSorter(
+      taskMemoryManager,
+      sc.env.blockManager,
+      taskContext,
+      100,
+      1,
+      conf,
+      new ShuffleWriteMetrics)
+
+    try {
+      val bytes = new Array[Byte](1)
+      sorter.insertRecord(bytes, Platform.BYTE_ARRAY_OFFSET, 1, 0)
+      sorter.insertRecord(bytes, Platform.BYTE_ARRAY_OFFSET, 1, 0)
+
+      val inMemSorter = {
+        val field = sorter.getClass.getDeclaredField("inMemSorter")
+        field.setAccessible(true)
+        field.get(sorter).asInstanceOf[ShuffleInMemorySorter]
+      }
+      val numRecords = inMemSorter.numRecords()
+
+      val otherConsumer = new TestMemoryConsumer(taskMemoryManager)
+      assert(sorter.spill(1L, otherConsumer) === 0L)
+      assert(inMemSorter.numRecords() === numRecords)
+      assert(taskMetrics.memoryBytesSpilled === 0L)
+      assert(taskMetrics.diskBytesSpilled === 0L)
+
+      // If there was no prior spill, closing should only write the final file.
+      assert(sorter.closeAndGetSpills().length === 1)
+    } finally {
+      sorter.cleanupResources()
+    }
+  }
 }
