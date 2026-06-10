@@ -252,38 +252,44 @@ class MapOutputTrackerSuite extends SparkFunSuite with LocalSparkContext {
     rpcEnv.shutdown()
   }
 
-  test("remote fetch using broadcast") {
-    val newConf = new SparkConf
-    newConf.set(RPC_MESSAGE_MAX_SIZE, 1)
-    newConf.set(RPC_ASK_TIMEOUT, "1") // Fail fast
-    newConf.set(SHUFFLE_MAPOUTPUT_MIN_SIZE_FOR_BROADCAST, 10240L) // 10 KiB << 1MiB framesize
-
-    // needs TorrentBroadcast so need a SparkContext
-    withSpark(new SparkContext("local", "MapOutputTrackerSuite", newConf)) { sc =>
-      val masterTracker = sc.env.mapOutputTracker.asInstanceOf[MapOutputTrackerMaster]
-      val rpcEnv = sc.env.rpcEnv
-      val masterEndpoint = new MapOutputTrackerMasterEndpoint(rpcEnv, masterTracker, newConf)
-      rpcEnv.stop(masterTracker.trackerEndpoint)
-      rpcEnv.setupEndpoint(MapOutputTracker.ENDPOINT_NAME, masterEndpoint)
-
-      // Frame size should be ~1.1MB, and MapOutputTrackerMasterEndpoint should throw exception.
-      // Note that the size is hand-selected here because map output statuses are compressed before
-      // being sent.
-      masterTracker.registerShuffle(20, 100, MergeStatus.SHUFFLE_PUSH_DUMMY_NUM_REDUCES)
-      (0 until 100).foreach { i =>
-        masterTracker.registerMapOutput(20, i, new CompressedMapStatus(
-          BlockManagerId("999", "mps", 1000), createArray(4000000, 0L), 5, 100))
+  for (offHeap <- Seq(false, true)) {
+    test(s"remote fetch using broadcast offHeap=$offHeap") {
+      val newConf = new SparkConf
+      newConf.set(RPC_MESSAGE_MAX_SIZE, 1)
+      newConf.set(RPC_ASK_TIMEOUT, "1") // Fail fast
+      newConf.set(SHUFFLE_MAPOUTPUT_MIN_SIZE_FOR_BROADCAST, 10240L) // 10 KiB << 1MiB framesize
+      newConf.set(MEMORY_OFFHEAP_ENABLED, offHeap)
+      if (offHeap) {
+        newConf.set(MEMORY_OFFHEAP_SIZE, 64L * 1024 * 1024)
       }
-      val senderAddress = RpcAddress("localhost", 12345)
-      val rpcCallContext = mock(classOf[RpcCallContext])
-      when(rpcCallContext.senderAddress).thenReturn(senderAddress)
-      masterEndpoint.receiveAndReply(rpcCallContext)(GetMapOutputStatuses(20))
-      // should succeed since majority of data is broadcast and actual serialized
-      // message size is small
-      verify(rpcCallContext, timeout(30000)).reply(any())
-      assert(1 == masterTracker.getNumCachedSerializedBroadcast)
-      masterTracker.unregisterShuffle(20)
-      assert(0 == masterTracker.getNumCachedSerializedBroadcast)
+
+      // needs TorrentBroadcast so need a SparkContext
+      withSpark(new SparkContext("local", "MapOutputTrackerSuite", newConf)) { sc =>
+        val masterTracker = sc.env.mapOutputTracker.asInstanceOf[MapOutputTrackerMaster]
+        val rpcEnv = sc.env.rpcEnv
+        val masterEndpoint = new MapOutputTrackerMasterEndpoint(rpcEnv, masterTracker, newConf)
+        rpcEnv.stop(masterTracker.trackerEndpoint)
+        rpcEnv.setupEndpoint(MapOutputTracker.ENDPOINT_NAME, masterEndpoint)
+
+        // Frame size should be ~1.1MB, and MapOutputTrackerMasterEndpoint should throw exception.
+        // Note that the size is hand-selected here because map output statuses are compressed
+        // before being sent.
+        masterTracker.registerShuffle(20, 100, MergeStatus.SHUFFLE_PUSH_DUMMY_NUM_REDUCES)
+        (0 until 100).foreach { i =>
+          masterTracker.registerMapOutput(20, i, new CompressedMapStatus(
+            BlockManagerId("999", "mps", 1000), createArray(4000000, 0L), 5, 100))
+        }
+        val senderAddress = RpcAddress("localhost", 12345)
+        val rpcCallContext = mock(classOf[RpcCallContext])
+        when(rpcCallContext.senderAddress).thenReturn(senderAddress)
+        masterEndpoint.receiveAndReply(rpcCallContext)(GetMapOutputStatuses(20))
+        // should succeed since majority of data is broadcast and actual serialized
+        // message size is small
+        verify(rpcCallContext, timeout(30000)).reply(any())
+        assert(1 == masterTracker.getNumCachedSerializedBroadcast)
+        masterTracker.unregisterShuffle(20)
+        assert(0 == masterTracker.getNumCachedSerializedBroadcast)
+      }
     }
   }
 
