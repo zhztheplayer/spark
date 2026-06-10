@@ -63,7 +63,8 @@ private[spark] class BroadcastManager(
   def newBroadcast[T: ClassTag](
       value_ : T,
       isLocal: Boolean,
-      serializedOnly: Boolean = false): Broadcast[T] = {
+      serializedOnly: Boolean = false,
+      useOffHeap: Boolean = false): Broadcast[T] = {
     val bid = nextBroadcastId.getAndIncrement()
     value_ match {
       case pb: PythonBroadcast =>
@@ -75,7 +76,7 @@ private[spark] class BroadcastManager(
 
       case _ => // do nothing
     }
-    broadcastFactory.newBroadcast[T](value_, isLocal, bid, serializedOnly)
+    broadcastFactory.newBroadcast[T](value_, isLocal, bid, serializedOnly, useOffHeap)
   }
 
   def unbroadcast(id: Long, removeFromDriver: Boolean, blocking: Boolean): Unit = {

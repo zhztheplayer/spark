@@ -57,7 +57,8 @@ import org.apache.spark.util.io.{ChunkedByteBuffer, ChunkedByteBufferOutputStrea
  * @param id A unique identifier for the broadcast variable.
  * @param serializedOnly if true, do not cache the unserialized value on the driver
  */
-private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long, serializedOnly: Boolean)
+private[spark] class TorrentBroadcast[T: ClassTag](
+    obj: T, id: Long, serializedOnly: Boolean, useOffHeap: Boolean = false)
   extends Broadcast[T](id) with Logging with Serializable {
 
   /**

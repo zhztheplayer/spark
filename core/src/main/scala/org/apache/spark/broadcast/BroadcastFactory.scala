@@ -43,7 +43,8 @@ private[spark] trait BroadcastFactory {
       value: T,
       isLocal: Boolean,
       id: Long,
-      serializedOnly: Boolean = false): Broadcast[T]
+      serializedOnly: Boolean = false,
+      useOffHeap: Boolean = false): Broadcast[T]
 
   def unbroadcast(id: Long, removeFromDriver: Boolean, blocking: Boolean): Unit
 

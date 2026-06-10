@@ -34,8 +34,9 @@ private[spark] class TorrentBroadcastFactory extends BroadcastFactory {
       value_ : T,
       isLocal: Boolean,
       id: Long,
-      serializedOnly: Boolean = false): Broadcast[T] = {
-    new TorrentBroadcast[T](value_, id, serializedOnly)
+      serializedOnly: Boolean = false,
+      useOffHeap: Boolean = false): Broadcast[T] = {
+    new TorrentBroadcast[T](value_, id, serializedOnly, useOffHeap)
   }
 
   override def stop(): Unit = { }
