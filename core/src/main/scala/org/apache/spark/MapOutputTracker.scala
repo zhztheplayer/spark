@@ -33,10 +33,12 @@ import scala.util.control.NonFatal
 import org.apache.commons.io.output.{ByteArrayOutputStream => ApacheByteArrayOutputStream}
 import org.roaringbitmap.RoaringBitmap
 
+import org.apache.spark.{SparkEnv, SparkException}
 import org.apache.spark.broadcast.{Broadcast, BroadcastManager}
 import org.apache.spark.internal.{Logging, MessageWithContext}
 import org.apache.spark.internal.LogKeys._
 import org.apache.spark.internal.config._
+import org.apache.spark.memory.MemoryMode
 import org.apache.spark.io.CompressionCodec
 import org.apache.spark.rpc.{RpcCallContext, RpcEndpoint, RpcEndpointRef, RpcEnv}
 import org.apache.spark.scheduler.{MapStatus, MergeStatus, ShuffleOutputStatus}
@@ -1576,7 +1578,8 @@ private[spark] object MapOutputTracker extends Logging {
       // Important arr(0) is the tag == DIRECT, ignore that while deserializing !
       // arr is a nested Array so that it can handle over 2GB serialized data
       val arr = chunkedByteBuf.getChunks().map(_.array())
-      val bcast = broadcastManager.newBroadcast(arr, isLocal)
+      val useOffHeap = SparkEnv.get.memoryManager.tungstenMemoryMode == MemoryMode.OFF_HEAP
+      val bcast = broadcastManager.newBroadcast(arr, isLocal, useOffHeap = useOffHeap)
       // Using `org.apache.commons.io.output.ByteArrayOutputStream` instead of the standard one
       // This implementation doesn't reallocate the whole memory block but allocates
       // additional buffers. This way no buffers need to be garbage collected and
