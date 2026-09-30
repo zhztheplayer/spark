@@ -27,7 +27,7 @@ import org.apache.spark.sql.execution.{ColumnarToRowExec, RowToColumnarExec}
  * not support row-based / columnar execution.
  *
  * `batchType != BatchType.None` must be consistent with `supportsColumnar`, and
- * `rowType != RowType.None` with `supportsRowBased` after child conventions are enforced.
+ * `rowType != RowType.None` with `supportsRowBased`.
  */
 @DeveloperApi
 final case class Convention(rowType: RowType, batchType: BatchType) {
