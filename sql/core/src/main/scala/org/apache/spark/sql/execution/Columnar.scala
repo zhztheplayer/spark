@@ -26,7 +26,7 @@ import org.apache.spark.sql.catalyst.expressions.codegen.Block._
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.errors.ExecutionErrors
-import org.apache.spark.sql.execution.convention.{BatchType, Convention, ConventionReq, RowType, TransitionGraph}
+import org.apache.spark.sql.execution.convention.{Convention, ConventionReq, TransitionGraph}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.execution.vectorized.WritableColumnVector
 import org.apache.spark.sql.types._
@@ -565,14 +565,13 @@ case class ApplyColumnarRulesAndInsertTransitions(
    *
    * The plan is executed row-based or columnar, whichever needs the cheapest transition path to
    * `req` in the [[TransitionGraph]]. Its children are then required to satisfy
-   * `plan.requiredChildConventions(outputsColumnar)`. Existing transitions are kept as they are.
+   * `plan.requiredChildConventions`. Existing transitions are kept as they are.
    */
   private def insertTransitions(plan: SparkPlan, req: ConventionReq): SparkPlan = {
     val conv = ApplyColumnarRulesAndInsertTransitions.conventionOf(plan)
-    val (outputsColumnar, transitions) = req match {
-      case ConventionReq.Any => (conv.supportsBatch, Nil)
-      case _ if req.isSatisfiedBy(conv) =>
-        (req.isInstanceOf[ConventionReq.Batch], Nil)
+    val transitions = req match {
+      case ConventionReq.Any => Nil
+      case _ if req.isSatisfiedBy(conv) => Nil
       case _ =>
         val to = req match {
           case ConventionReq.Row(t) => t
@@ -580,20 +579,20 @@ case class ApplyColumnarRulesAndInsertTransitions(
           case ConventionReq.Any => throw new IllegalStateException()
         }
         val candidates =
-          (if (conv.supportsRow) TransitionGraph.findPath(conv.rowType, to).map((false, _))
-          else None).toSeq ++
-          (if (conv.supportsBatch) TransitionGraph.findPath(conv.batchType, to).map((true, _))
-          else None).toSeq
+          (if (conv.supportsRow) TransitionGraph.findPath(conv.rowType, to).toSeq
+          else Nil) ++
+          (if (conv.supportsBatch) TransitionGraph.findPath(conv.batchType, to).toSeq
+          else Nil)
         if (candidates.isEmpty) {
           throw SparkException.internalError(
             s"No transition from $conv to $req for plan:\n${plan.treeString}")
         }
-        candidates.minBy(_._2.map(_.cost).sum)
+        candidates.minBy(_.map(_.cost).sum)
     }
     val newPlan = if (isTransition(plan)) {
       plan
     } else {
-      val childReqs = plan.requiredChildConventions(outputsColumnar)
+      val childReqs = plan.requiredChildConventions
       assert(childReqs.size == plan.children.size,
         s"${plan.nodeName} requires ${childReqs.size} child conventions for " +
           s"${plan.children.size} children")
@@ -615,15 +614,12 @@ case class ApplyColumnarRulesAndInsertTransitions(
 }
 
 object ApplyColumnarRulesAndInsertTransitions {
-  /**
-   * The convention of `plan` used for transition insertion. A plan supporting neither row-based
-   * nor columnar execution (e.g. a `UnionExec` of row-based and columnar-only children) is
-   * executed row-based, with row-based children.
-   */
+  /** The convention of `plan` used for transition insertion. */
   private[execution] def conventionOf(plan: SparkPlan): Convention = {
     val conv = plan.convention
     if (!conv.supportsRow && !conv.supportsBatch) {
-      Convention(RowType.VanillaRowType, BatchType.None)
+      throw SparkException.internalError(
+        s"Plan ${plan.nodeName} declares neither a row nor a batch convention.")
     } else {
       conv
     }

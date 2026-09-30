@@ -38,19 +38,29 @@ class ConventionSuite extends SharedSparkSession {
       RowUnary(ColumnarToRowExec(VanillaBatchLeaf())))
     assert(insert(VanillaBatchUnary(RowLeaf()), outputsColumnar = true) ==
       VanillaBatchUnary(RowToColumnarExec(RowLeaf())))
-    // A dual-mode plan follows its parent.
+    // A dual-mode plan's children use columnar execution regardless of its parent's requirement.
     assert(insert(RowUnary(DualUnary(VanillaBatchLeaf()))) ==
-      RowUnary(DualUnary(ColumnarToRowExec(VanillaBatchLeaf()))))
+      RowUnary(DualUnary(VanillaBatchLeaf())))
     assert(insert(DualUnary(RowLeaf()), outputsColumnar = true) ==
       DualUnary(RowToColumnarExec(RowLeaf())))
-    // A plan supporting neither row-based nor columnar execution is executed row-based.
-    assert(insert(MixedBinary(RowLeaf(), VanillaBatchLeaf())) ==
-      MixedBinary(RowLeaf(), ColumnarToRowExec(VanillaBatchLeaf())))
-    assert(insert(MixedBinary(RowLeaf(), FooLeaf()), outputsColumnar = true) ==
-      RowToColumnarExec(MixedBinary(RowLeaf(), ColumnarToRowExec(FooToVanillaExec(FooLeaf())))))
     // Existing transitions are kept.
     val c2r = ColumnarToRowExec(VanillaBatchLeaf())
     assert(insert(c2r) eq c2r)
+  }
+
+  test("union aligns mixed row-based and columnar-only children") {
+    assert(insert(UnionExec(Seq(RowLeaf(), VanillaBatchLeaf()))) ==
+      UnionExec(Seq(RowLeaf(), ColumnarToRowExec(VanillaBatchLeaf()))))
+    assert(insert(UnionExec(Seq(RowLeaf(), FooLeaf())), outputsColumnar = true) ==
+      RowToColumnarExec(UnionExec(Seq(RowLeaf(), ColumnarToRowExec(FooToVanillaExec(FooLeaf()))))))
+  }
+
+  test("plans must declare a row or batch convention") {
+    val plan = MixedBinary(RowLeaf(), VanillaBatchLeaf())
+    val e = intercept[SparkException](insert(plan))
+    assert(e.getMessage.contains("declares neither a row nor a batch convention"))
+    intercept[SparkException](insert(plan, outputsColumnar = true))
+    intercept[SparkException](plan.requiredChildConventions)
   }
 
   test("custom batch type: transitions from / to vanilla") {
@@ -161,27 +171,27 @@ object ConventionSuite {
 
   case class VanillaToFooExec(child: SparkPlan) extends MockUnary with BatchOnly {
     override def batchType: BatchType = FooBatchType
-    override def requiredChildConventions(outputsColumnar: Boolean): Seq[ConventionReq] =
+    override def requiredChildConventions: Seq[ConventionReq] =
       Seq(ConventionReq.vanillaBatch)
   }
   case class FooToVanillaExec(child: SparkPlan) extends MockUnary with BatchOnly {
     override def batchType: BatchType = BatchType.VanillaBatchType
-    override def requiredChildConventions(outputsColumnar: Boolean): Seq[ConventionReq] =
+    override def requiredChildConventions: Seq[ConventionReq] =
       Seq(ConventionReq.Batch(FooBatchType))
   }
   case class VanillaToBarExec(child: SparkPlan) extends MockUnary with BatchOnly {
     override def batchType: BatchType = BarBatchType
-    override def requiredChildConventions(outputsColumnar: Boolean): Seq[ConventionReq] =
+    override def requiredChildConventions: Seq[ConventionReq] =
       Seq(ConventionReq.vanillaBatch)
   }
   case class BarToVanillaExec(child: SparkPlan) extends MockUnary with BatchOnly {
     override def batchType: BatchType = BatchType.VanillaBatchType
-    override def requiredChildConventions(outputsColumnar: Boolean): Seq[ConventionReq] =
+    override def requiredChildConventions: Seq[ConventionReq] =
       Seq(ConventionReq.Batch(BarBatchType))
   }
   case class FooToBarExec(child: SparkPlan) extends MockUnary with BatchOnly {
     override def batchType: BatchType = BarBatchType
-    override def requiredChildConventions(outputsColumnar: Boolean): Seq[ConventionReq] =
+    override def requiredChildConventions: Seq[ConventionReq] =
       Seq(ConventionReq.Batch(FooBatchType))
   }
 }

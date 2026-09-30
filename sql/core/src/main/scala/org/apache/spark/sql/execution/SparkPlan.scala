@@ -102,18 +102,18 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
   def convention: Convention = Convention.vanilla(supportsRowBased, supportsColumnar)
 
   /**
-   * The conventions this plan requires from its children, given whether it is executed columnar
-   * (`outputsColumnar`) or row-based. By default, children follow this plan's own output
-   * convention.
+   * The conventions this plan requires from its children. By default, children follow this
+   * plan's columnar output convention if available, or its row-based convention otherwise.
    */
-  def requiredChildConventions(outputsColumnar: Boolean): Seq[ConventionReq] = {
+  def requiredChildConventions: Seq[ConventionReq] = {
     val conv = convention
-    val req = if (outputsColumnar) {
+    val req = if (conv.supportsBatch) {
       ConventionReq.Batch(conv.batchType)
     } else if (conv.supportsRow) {
       ConventionReq.Row(conv.rowType)
     } else {
-      ConventionReq.vanillaRow
+      throw SparkException.internalError(
+        s"Plan $nodeName declares neither a row nor a batch convention.")
     }
     children.map(_ => req)
   }

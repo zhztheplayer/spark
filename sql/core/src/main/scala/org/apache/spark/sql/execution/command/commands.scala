@@ -113,10 +113,10 @@ case class DataWritingCommandExec(cmd: DataWritingCommand, child: SparkPlan)
 
   // With planned write, the write command invokes child plan's `executeWrite` which is neither
   // columnar nor row-based.
-  override def requiredChildConventions(outputsColumnar: Boolean): Seq[ConventionReq] =
+  override def requiredChildConventions: Seq[ConventionReq] =
     cmd match {
       case _: V1WriteCommand if conf.plannedWriteEnabled => Seq(ConventionReq.Any)
-      case _ => super.requiredChildConventions(outputsColumnar)
+      case _ => super.requiredChildConventions
     }
 
   override lazy val metrics: Map[String, SQLMetric] = cmd.metrics

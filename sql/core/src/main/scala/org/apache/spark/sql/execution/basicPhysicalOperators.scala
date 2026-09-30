@@ -35,6 +35,7 @@ import org.apache.spark.sql.catalyst.expressions.codegen._
 import org.apache.spark.sql.catalyst.optimizer.CollapseProject
 import org.apache.spark.sql.catalyst.plans.logical.Sample
 import org.apache.spark.sql.catalyst.plans.physical._
+import org.apache.spark.sql.execution.convention.{BatchType, Convention, RowType}
 import org.apache.spark.sql.execution.joins.{ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
@@ -1276,6 +1277,16 @@ case class UnionExec(children: Seq[SparkPlan]) extends SparkPlan with CodegenSup
   override def supportsColumnar: Boolean = children.forall(_.supportsColumnar)
 
   override def supportsRowBased: Boolean = children.forall(_.supportsRowBased)
+
+  override def convention: Convention = {
+    val conv = super.convention
+    // Mixed row-based and columnar-only children can be aligned with row-based transitions.
+    if (!conv.supportsRow && !conv.supportsBatch) {
+      Convention(RowType.VanillaRowType, BatchType.None)
+    } else {
+      conv
+    }
+  }
 
   protected override def doExecuteColumnar(): RDD[ColumnarBatch] = unionRDDs(_.executeColumnar())
 
